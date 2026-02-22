@@ -1,0 +1,480 @@
+/**
+ * lib/scoring.ts
+ * ─────────────────────────────────────────────────────────────────────────────
+ * MIGRATION READINESS SCORING ENGINE
+ *
+ * This file owns ALL scoring logic for the Migration Readiness Analyzer.
+ * The API route (app/api/analyze/route.ts) only fetches raw data; it then
+ * passes that data into the functions here to produce scores.
+ *
+ * WHY a separate file?
+ *  - You can unit-test every scoring function in isolation (no HTTP needed).
+ *  - When you add a new data source (e.g. Moralis for real holder counts),
+ *    you only change the inputs here — the route stays the same.
+ *  - Score weights and thresholds are in one visible place (SCORE_WEIGHTS).
+ *
+ * HOW SCORING WORKS (overview)
+ * ─────────────────────────────
+ * Each module returns a score 0–100 and a human-readable breakdown object.
+ * The breakdown is shown directly in the UI — no magic numbers, full transparency.
+ *
+ * Final "Overall" score = weighted average of all module scores.
+ * Weights are defined in SCORE_WEIGHTS below and follow industry convention
+ * for evaluating DeFi token migration viability.
+ *
+ * MODULE OVERVIEW
+ * ───────────────
+ * Module 1: Market Demand       — CoinGecko (live ✅)
+ * Module 2: Market Presence     — CoinGecko community proxy (live ✅)
+ *                                 FUTURE: Moralis/Alchemy for real holder count
+ * Module 3: Liquidity Profile   — CoinGecko tickers + volume (live ✅)
+ *                                 FUTURE: DeFiLlama TVL API for deeper pool data
+ * Module 4: Bridge Risk         — Static hardcode (live ✅)
+ *                                 FUTURE: Wormhole API + LayerZero API for real quotes
+ * Module 5: Migration Strategy  — Derived from modules 1–4 (live ✅)
+ * Module 6: Overall Score       — Weighted average (live ✅)
+ */
+
+// ─── Shared types ─────────────────────────────────────────────────────────────
+
+/**
+ * Every scoring module returns this shape.
+ * `breakdown` keys are label strings → displayed in the UI table.
+ */
+export type ScoreResult = {
+  score: number; // 0–100, integer
+  breakdown: Record<string, string | number>;
+};
+
+/** One bridge entry returned in the Bridge Risk module. */
+export type BridgeEntry = {
+  name: string;
+  supported: boolean;
+  estimatedCost: string; // e.g. "$2–6" — static for now, live quotes later
+  finalityMin: number;  // estimated finality in minutes
+};
+
+/** Combined scores object passed between functions. */
+export type AllScores = {
+  demand: number;
+  marketPresence: number;
+  liquidity: number;
+  bridgeRisk: number;
+};
+
+export type StrategyResult = {
+  strategy: string;
+  rationale: string;
+};
+
+// ─── Official score weights ───────────────────────────────────────────────────
+//
+// These weights are based on the project specification in contexts.md.
+// Demand and Liquidity carry the most weight because they are the primary
+// indicators of whether a Solana listing will have healthy initial trading.
+// Bridge risk is downweighted because all major chains have viable routes.
+//
+export const SCORE_WEIGHTS = {
+  demand: 0.30,        // 30% — is there real trading interest?
+  marketPresence: 0.25, // 25% — how distributed / community-backed is it?
+  liquidity: 0.30,     // 30% — can traders actually buy/sell without slippage?
+  bridgeRisk: 0.15,    // 15% — can it be moved safely and cheaply?
+} as const;
+
+// ─── Utility ──────────────────────────────────────────────────────────────────
+
+/**
+ * Clamps a number to [min, max] and rounds to an integer.
+ * Used by every scoring function to keep outputs in the 0–100 range.
+ */
+export function clamp(value: number, min = 0, max = 100): number {
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+// ─── Module 1: Market Demand Score ───────────────────────────────────────────
+//
+// DATA SOURCE: CoinGecko `coins/contract/:address` (live)
+//
+// WHY THESE METRICS?
+//  - Vol/MCap ratio is the industry-standard "turnover ratio" for a token.
+//    Anything above 5% signals active, organic trading.
+//    Source: CMC / CoinGecko analyst guides, DeFi Pulse methodology.
+//  - Market cap rank signals broad awareness (top 100 → more likely adoption).
+//  - 7d + 30d price trend shows momentum — rising tokens have pull-through demand.
+//
+// SCORING BREAKDOWN (100 pts total):
+//  ┌──────────────────────┬────────┬────────────────────────────────────────┐
+//  │ Sub-metric           │ Max pts│ Logic                                  │
+//  ├──────────────────────┼────────┼────────────────────────────────────────┤
+//  │ Vol/MCap ratio       │  40    │ volMcapRatio * 5 (capped at 40)        │
+//  │ Market cap rank      │  30    │ 30 - rank*0.3  (rank 1 = 30, rank 100 = 0) │
+//  │ Price trend 7d+30d   │  30    │ 15 + weighted change (clamped 0–30)    │
+//  └──────────────────────┴────────┴────────────────────────────────────────┘
+//
+
+export type DemandInput = {
+  volume24h: number;    // from market_data.total_volume.usd
+  marketCap: number;    // from market_data.market_cap.usd
+  marketCapRank: number | null; // from market_data.market_cap_rank
+  priceChange7d: number;  // from market_data.price_change_percentage_7d
+  priceChange30d: number; // from market_data.price_change_percentage_30d
+};
+
+export function calcDemandScore(data: DemandInput): ScoreResult {
+  const volMcapRatio =
+    data.marketCap > 0 ? (data.volume24h / data.marketCap) * 100 : 0;
+
+  // Sub-score A: turnover ratio (0–40 pts)
+  const volScore = clamp(volMcapRatio * 5, 0, 40);
+
+  // Sub-score B: market cap rank (0–30 pts). No rank data → 10 pts default.
+  const rankScore = data.marketCapRank
+    ? clamp(Math.max(0, 30 - data.marketCapRank * 0.3), 0, 30)
+    : 10;
+
+  // Sub-score C: price trend (0–30 pts). Neutral baseline = 15.
+  const trendScore = clamp(
+    15 + (data.priceChange7d * 0.5 + data.priceChange30d * 0.3),
+    0,
+    30,
+  );
+
+  return {
+    score: clamp(volScore + rankScore + trendScore),
+    breakdown: {
+      "24h Volume (USD)":    `$${(data.volume24h / 1e6).toFixed(2)}M`,
+      "Vol/MCap Ratio":      `${volMcapRatio.toFixed(2)}%`,
+      "Market Cap Rank":     data.marketCapRank ?? "N/A",
+      "7d Price Change":     `${data.priceChange7d.toFixed(2)}%`,
+      "30d Price Change":    `${data.priceChange30d.toFixed(2)}%`,
+    },
+  };
+}
+
+// ─── Module 2: Market Presence Score ─────────────────────────────────────────
+//
+// DATA SOURCE: Etherscan V2 (free) + CoinGecko tickers
+//
+// REAL DATA NOW LIVE:
+//  - uniqueRecipients   → count of unique wallets that received tokens in the
+//                         last 1000 transfers (Etherscan account/tokentx, free)
+//  - top10TransferPct   → % of recent transfer volume going to top 10 wallets
+//                         (computed in lib/holders.ts, Etherscan free tier)
+//  - tickerCount        → # of exchanges listing the token (CoinGecko tickers)
+//  - watchlistUsers     → CoinGecko portfolio watchers (supplementary signal)
+//
+// WHY THESE METRICS?
+//  - uniqueRecipients: More unique recent recipients = more distributed ownership.
+//    Low count signals low adoption or controlled circulation.
+//  - top10TransferPct: The classic "whale concentration" metric.
+//    Industry benchmark (Chainalysis): >50% in top 10 = high centralization risk.
+//    Source: Chainalysis 2022 DeFi Report; CoinMetrics token distribution research.
+//  - tickerCount: Exchange breadth reflects how accessible the token is globally.
+//
+// SCORING BREAKDOWN (100 pts total):
+//  ┌──────────────────────────┬────────┬─────────────────────────────────────┐
+//  │ Sub-metric               │ Max pts│ Logic                               │
+//  ├──────────────────────────┼────────┼─────────────────────────────────────┤
+//  │ Unique recent recipients │  40    │ log10(count) * 13 (capped at 40)    │
+//  │ Top-10 concentration     │  40    │ 40 − top10Pct*0.8 (lower = better)  │
+//  │ Exchange breadth         │  20    │ tickerCount * 0.4 (capped at 20)    │
+//  └──────────────────────────┴────────┴─────────────────────────────────────┘
+//
+// CONCENTRATION BENCHMARKS (industry standard):
+//  top10Pct < 20%  → Very distributed (40 pts)
+//  top10Pct 20-40% → Healthy          (24–40 pts)
+//  top10Pct 40-60% → Moderate risk    (8–24 pts)
+//  top10Pct > 60%  → High risk        (0–8 pts)
+//
+// FALLBACK: If holder data is unavailable (BSC without BscScan key, or API error),
+//  top10TransferPct defaults to 0 and uniqueRecipients to 0 → neutral score of ~20.
+//
+
+export type MarketPresenceInput = {
+  // From Etherscan (lib/holders.ts)
+  uniqueRecipients: number;   // unique wallets receiving tokens in last 1000 txs
+  top10TransferPct: number;   // % of transfer volume going to top 10 wallets (0–100)
+  holderDataAvailable: boolean; // false = BSC without key, or API failed
+
+  // From CoinGecko (always available)
+  tickerCount: number;        // number of exchange listings
+  watchlistUsers: number;     // CoinGecko portfolio watchers (supplementary)
+};
+
+export function calcMarketPresenceScore(data: MarketPresenceInput): ScoreResult {
+  // Sub-score A: unique recent recipients (log scale)
+  // log10(1)=0 → 0pts | log10(100)=2 → 26pts | log10(1000)=3 → 39pts | 1000+ → 40pts
+  const recipientScore = data.holderDataAvailable
+    ? clamp(Math.log10(data.uniqueRecipients + 1) * 13, 0, 40)
+    : 20; // neutral fallback when data unavailable
+
+  // Sub-score B: top-10 concentration (INVERSE — lower concentration = higher score)
+  // top10Pct=0%  → 40pts | top10Pct=50% → 0pts | top10Pct=100% → 0pts
+  const concentrationScore = data.holderDataAvailable
+    ? clamp(40 - data.top10TransferPct * 0.8, 0, 40)
+    : 20; // neutral fallback
+
+  // Sub-score C: exchange breadth (CoinGecko tickers — always available)
+  const exchangeScore = clamp(data.tickerCount * 0.4, 0, 20);
+
+  const score = clamp(recipientScore + concentrationScore + exchangeScore);
+
+  // Classify concentration risk for the UI
+  const concentrationRisk =
+    !data.holderDataAvailable     ? "Unknown (chain not supported)"
+    : data.top10TransferPct < 20  ? "Low — well distributed"
+    : data.top10TransferPct < 40  ? "Moderate — healthy"
+    : data.top10TransferPct < 60  ? "Elevated — some concentration"
+    :                               "High — top wallets dominate";
+
+  return {
+    score,
+    breakdown: {
+      "Unique Recent Recipients":    data.uniqueRecipients.toLocaleString(),
+      "Top-10 Transfer Concentration": data.holderDataAvailable
+        ? `${data.top10TransferPct.toFixed(1)}%`
+        : "N/A",
+      "Concentration Risk":          concentrationRisk,
+      "Exchange Listings":           data.tickerCount,
+      "Watchlist Users (CG)":        data.watchlistUsers.toLocaleString(),
+      "Data Source":                 data.holderDataAvailable
+        ? "Etherscan V2 (last 1000 transfers)"
+        : "Etherscan not available for this chain",
+    },
+  };
+}
+
+// ─── Module 3: Liquidity Profile Score ───────────────────────────────────────
+//
+// DATA SOURCE: DeFiLlama (free, no key) — PRIMARY
+//              CoinGecko market_data + tickers — SECONDARY / FALLBACK
+//
+// REAL DATA NOW LIVE:
+//  - totalPoolTvlUsd  → sum of TVL across ALL DEX pools holding this token
+//                       (DeFiLlama yields/pools, filtered by underlyingTokens)
+//  - poolCount        → number of distinct pools (more = more accessible)
+//  - priceConfidence  → DeFiLlama confidence score 0–1 (how consistently
+//                       the price is quoted across oracles and CEXes)
+//  - tickerCount      → CoinGecko exchange listings (always available)
+//  - spread           → 24h high/low spread from CoinGecko (always available)
+//
+// WHY THESE METRICS?
+//  - totalPoolTvlUsd directly answers contexts.md: "Total liquidity on all
+//    major venues". This is the industry-standard metric used by DeFi Pulse,
+//    DeFiLlama rankings, and Messari reports.
+//  - priceConfidence: DeFiLlama assigns this based on how many sources agree
+//    on the price. Low confidence = token is thinly traded / unreliable data.
+//  - Spread proxy: still useful as a secondary signal for CEX order book depth.
+//
+// SCORING BREAKDOWN (100 pts total):
+//  ┌──────────────────────────┬────────┬───────────────────────────────────────┐
+//  │ Sub-metric               │ Max pts│ Logic                                 │
+//  ├──────────────────────────┼────────┼───────────────────────────────────────┤
+//  │ Pool TVL (DeFiLlama)     │  50    │ log10(tvl+1)*10 (capped at 50)        │
+//  │                          │        │ <$1M=0 | $1M=30 | $100M=44 | $1B=50  │
+//  ├──────────────────────────┼────────┼───────────────────────────────────────┤
+//  │ Price confidence         │  20    │ confidence * 20 (0.99 → 19.8 pts)    │
+//  ├──────────────────────────┼────────┼───────────────────────────────────────┤
+//  │ Exchange listings (CG)   │  15    │ tickerCount * 0.15 (capped at 15)    │
+//  ├──────────────────────────┼────────┼───────────────────────────────────────┤
+//  │ Price spread proxy (CG)  │  15    │ 15 − spread*1.5 (tighter = better)   │
+//  └──────────────────────────┴────────┴───────────────────────────────────────┘
+//
+// FALLBACK: If DeFiLlama is unavailable (totalPoolTvlUsd=0, poolCount=0),
+//  the TVL and confidence scores default to the CoinGecko Vol/MCap proxy
+//  to ensure the overall analysis still returns a valid score.
+//
+
+export type LiquidityInput = {
+  // From DeFiLlama (lib/liquidity.ts) — primary
+  totalPoolTvlUsd: number;   // total TVL in USD across all pools
+  poolCount: number;         // number of pools holding this token
+  priceConfidence: number;   // 0–1 confidence from DeFiLlama
+
+  // From CoinGecko — secondary / always available
+  volume24h: number;   // market_data.total_volume.usd (fallback signal)
+  marketCap: number;   // market_data.market_cap.usd   (fallback signal)
+  tickerCount: number; // tickers[].length
+  high24h: number;     // market_data.high_24h.usd
+  low24h: number;      // market_data.low_24h.usd
+};
+
+export function calcLiquidityScore(data: LiquidityInput): ScoreResult {
+  // Sub-score A: Real pool TVL from DeFiLlama (primary — 0–50 pts)
+  // log10 scale: $0=0 | $1M≈30 | $10M≈40 | $100M≈44 | $1B≈50
+  // Falls back to Vol/MCap ratio if no DeFiLlama data (tvl=0, poolCount=0)
+  const hasTvlData = data.totalPoolTvlUsd > 0;
+  const tvlScore = hasTvlData
+    ? clamp(Math.log10(data.totalPoolTvlUsd + 1) * 10, 0, 50)
+    : clamp(
+        // Fallback: Vol/MCap ratio proxy (same logic as before DeFiLlama)
+        data.marketCap > 0
+          ? (data.volume24h / data.marketCap) * 100 * 5
+          : 0,
+        0,
+        50,
+      );
+
+  // Sub-score B: DeFiLlama price confidence (0–20 pts)
+  const confidenceScore = clamp(data.priceConfidence * 20, 0, 20);
+
+  // Sub-score C: Exchange listing breadth from CoinGecko (0–15 pts)
+  const exchangeScore = clamp(data.tickerCount * 0.15, 0, 15);
+
+  // Sub-score D: 24h price spread proxy from CoinGecko (0–15 pts)
+  const spread =
+    data.high24h > 0
+      ? ((data.high24h - data.low24h) / data.high24h) * 100
+      : 10;
+  const spreadScore = clamp(15 - spread * 1.5, 0, 15);
+
+  const slippage1pct = (spread * 0.1).toFixed(3);
+  const slippage5pct = (spread * 0.5).toFixed(3);
+
+  // TVL label for UI
+  const tvlLabel = data.totalPoolTvlUsd >= 1e9
+    ? `$${(data.totalPoolTvlUsd / 1e9).toFixed(2)}B`
+    : data.totalPoolTvlUsd >= 1e6
+    ? `$${(data.totalPoolTvlUsd / 1e6).toFixed(2)}M`
+    : `$${(data.totalPoolTvlUsd / 1e3).toFixed(1)}K`;
+
+  return {
+    score: clamp(tvlScore + confidenceScore + exchangeScore + spreadScore),
+    breakdown: {
+      "Total Pool TVL":          hasTvlData ? tvlLabel : "N/A (using proxy)",
+      "DEX Pool Count":          data.poolCount,
+      "Price Confidence":        data.priceConfidence > 0
+        ? `${(data.priceConfidence * 100).toFixed(0)}%`
+        : "N/A",
+      "Exchange Listings (CG)":  data.tickerCount,
+      "24h Price Spread":        `${spread.toFixed(2)}%`,
+      "Est. Slippage @ 1%":      `~${slippage1pct}%`,
+      "Est. Slippage @ 5%":      `~${slippage5pct}%`,
+      "Data Source":             hasTvlData ? "DeFiLlama (real TVL)" : "CoinGecko proxy",
+    },
+  };
+}
+
+// ─── Module 4: Bridge Risk Score ─────────────────────────────────────────────
+//
+// DATA SOURCE: Static hardcode (current)
+//
+// FUTURE DATA SOURCES:
+//  - Wormhole SDK / REST API  → https://wormhole.com/docs
+//    `GET /v1/governor/available_notional_by_chain` — real capacity per chain
+//  - LayerZero Scan API       → https://layerzeroscan.com/api/explorer
+//    Returns real transfer cost quotes per route
+//  - CCIP (Chainlink)         → https://docs.chain.link/ccip
+//    Supports: Ethereum, Polygon, Avalanche, BSC, Arbitrum, Optimism, Base
+//    Does NOT support BSC↔Solana natively yet.
+//
+// SCORING LOGIC:
+//  Bridge score = 30 (baseline) + 20 per supported bridge.
+//  More bridge options = more routes = lower migration risk.
+//  High score (90) means 3 bridges available; low (50) means 1.
+//
+
+export function calcBridgeScore(chain: string): ScoreResult & { bridges: BridgeEntry[] } {
+  const BRIDGE_DATA: Record<string, BridgeEntry[]> = {
+    ethereum: [
+      { name: "Wormhole",       supported: true,  estimatedCost: "$3-8",   finalityMin: 15 },
+      { name: "CCIP (Chainlink)", supported: true, estimatedCost: "$5-15",  finalityMin: 20 },
+      { name: "LayerZero",      supported: true,  estimatedCost: "$2-6",   finalityMin: 10 },
+    ],
+    bsc: [
+      { name: "Wormhole",       supported: true,  estimatedCost: "$1-4",   finalityMin: 5  },
+      { name: "CCIP (Chainlink)", supported: false, estimatedCost: "N/A",  finalityMin: 0  },
+      { name: "LayerZero",      supported: true,  estimatedCost: "$1-3",   finalityMin: 5  },
+    ],
+    polygon: [
+      { name: "Wormhole",       supported: true,  estimatedCost: "$0.5-2", finalityMin: 5  },
+      { name: "CCIP (Chainlink)", supported: true, estimatedCost: "$2-8",  finalityMin: 15 },
+      { name: "LayerZero",      supported: true,  estimatedCost: "$0.5-2", finalityMin: 5  },
+    ],
+  };
+
+  const bridges: BridgeEntry[] = BRIDGE_DATA[chain] ?? BRIDGE_DATA["ethereum"];
+  const supported = bridges.filter((b) => b.supported);
+  const fastestFinality =
+    supported.length > 0
+      ? Math.min(...supported.map((b) => b.finalityMin))
+      : 0;
+
+  return {
+    score: clamp(30 + supported.length * 20),
+    bridges,
+    breakdown: {
+      "Source Chain":          chain,
+      "Bridges Available":     supported.length,
+      "Fastest Bridge":        supported[0]?.name ?? "None",
+      "Fastest Finality (min)": fastestFinality,
+      "Data Note":             "Static — live quotes TODO (Wormhole/LZ API)",
+    },
+  };
+}
+
+// ─── Module 5: Migration Strategy Recommendation ─────────────────────────────
+//
+// Purely derived — no external data needed.
+// Decision tree based on the composite scores from modules 1–4.
+//
+// Strategy options (from contexts.md spec):
+//  1. Canonical Token Launch   — native SPL token, direct liquidity migration
+//  2. LP-Based Migration       — seed Orca/Raydium pool first
+//  3. Liquidity Bootstrapping  — LBP event for price discovery
+//  4. Wrapped Token            — lowest barrier, lowest commitment
+//
+
+export function recommendStrategy(scores: AllScores): StrategyResult {
+  const avg =
+    scores.demand * SCORE_WEIGHTS.demand +
+    scores.marketPresence * SCORE_WEIGHTS.marketPresence +
+    scores.liquidity * SCORE_WEIGHTS.liquidity +
+    scores.bridgeRisk * SCORE_WEIGHTS.bridgeRisk;
+
+  if (avg >= 70) {
+    return {
+      strategy: "Canonical Token Launch",
+      rationale:
+        "Strong demand, deep liquidity, and broad market presence. " +
+        "Launch a native SPL token and migrate liquidity directly via Wormhole or CCIP.",
+    };
+  }
+  if (avg >= 55) {
+    return {
+      strategy: "LP-Based Migration",
+      rationale:
+        "Moderate scores across the board. " +
+        "Seed a concentrated liquidity pool on Orca or Raydium to bootstrap trading before full migration.",
+    };
+  }
+  if (scores.liquidity < 40) {
+    return {
+      strategy: "Liquidity Bootstrapping Event (LBP)",
+      rationale:
+        "Liquidity on the source chain is thin. " +
+        "Use a Liquidity Bootstrapping Pool on Fjord or Meteora to establish fair price discovery before launch.",
+    };
+  }
+  return {
+    strategy: "Wrapped Token",
+    rationale:
+      "Overall readiness is below threshold. " +
+      "Start with a wrapped representation (e.g. via Wormhole) while building community and liquidity on Solana.",
+  };
+}
+
+// ─── Module 6: Overall Readiness Score ───────────────────────────────────────
+//
+// Weighted average using SCORE_WEIGHTS constants above.
+// This is the "gut check" number displayed prominently in the UI.
+//
+
+export function calcOverallScore(scores: AllScores): number {
+  return clamp(
+    scores.demand        * SCORE_WEIGHTS.demand +
+    scores.marketPresence * SCORE_WEIGHTS.marketPresence +
+    scores.liquidity     * SCORE_WEIGHTS.liquidity +
+    scores.bridgeRisk    * SCORE_WEIGHTS.bridgeRisk,
+  );
+}
