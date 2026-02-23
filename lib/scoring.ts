@@ -142,11 +142,11 @@ export function calcDemandScore(data: DemandInput): ScoreResult {
   return {
     score: clamp(volScore + rankScore + trendScore),
     breakdown: {
-      "24h Volume (USD)":    `$${(data.volume24h / 1e6).toFixed(2)}M`,
-      "Vol/MCap Ratio":      `${volMcapRatio.toFixed(2)}%`,
-      "Market Cap Rank":     data.marketCapRank ?? "N/A",
-      "7d Price Change":     `${data.priceChange7d.toFixed(2)}%`,
-      "30d Price Change":    `${data.priceChange30d.toFixed(2)}%`,
+      "24h Volume (USD)": `$${(data.volume24h / 1e6).toFixed(2)}M`,
+      "Vol/MCap Ratio": `${volMcapRatio.toFixed(2)}%`,
+      "Market Cap Rank": data.marketCapRank ?? "N/A",
+      "7d Price Change": `${data.priceChange7d.toFixed(2)}%`,
+      "30d Price Change": `${data.priceChange30d.toFixed(2)}%`,
     },
   };
 }
@@ -221,23 +221,23 @@ export function calcMarketPresenceScore(data: MarketPresenceInput): ScoreResult 
 
   // Classify concentration risk for the UI
   const concentrationRisk =
-    !data.holderDataAvailable     ? "Unknown (chain not supported)"
-    : data.top10TransferPct < 20  ? "Low — well distributed"
-    : data.top10TransferPct < 40  ? "Moderate — healthy"
-    : data.top10TransferPct < 60  ? "Elevated — some concentration"
-    :                               "High — top wallets dominate";
+    !data.holderDataAvailable ? "Unknown (chain not supported)"
+      : data.top10TransferPct < 20 ? "Low — well distributed"
+        : data.top10TransferPct < 40 ? "Moderate — healthy"
+          : data.top10TransferPct < 60 ? "Elevated — some concentration"
+            : "High — top wallets dominate";
 
   return {
     score,
     breakdown: {
-      "Unique Recent Recipients":    data.uniqueRecipients.toLocaleString(),
+      "Unique Recent Recipients": data.uniqueRecipients.toLocaleString(),
       "Top-10 Transfer Concentration": data.holderDataAvailable
         ? `${data.top10TransferPct.toFixed(1)}%`
         : "N/A",
-      "Concentration Risk":          concentrationRisk,
-      "Exchange Listings":           data.tickerCount,
-      "Watchlist Users (CG)":        data.watchlistUsers.toLocaleString(),
-      "Data Source":                 data.holderDataAvailable
+      "Concentration Risk": concentrationRisk,
+      "Exchange Listings": data.tickerCount,
+      "Watchlist Users (CG)": data.watchlistUsers.toLocaleString(),
+      "Data Source": data.holderDataAvailable
         ? "Etherscan V2 (last 1000 transfers)"
         : "Etherscan not available for this chain",
     },
@@ -307,13 +307,13 @@ export function calcLiquidityScore(data: LiquidityInput): ScoreResult {
   const tvlScore = hasTvlData
     ? clamp(Math.log10(data.totalPoolTvlUsd + 1) * 10, 0, 50)
     : clamp(
-        // Fallback: Vol/MCap ratio proxy (same logic as before DeFiLlama)
-        data.marketCap > 0
-          ? (data.volume24h / data.marketCap) * 100 * 5
-          : 0,
-        0,
-        50,
-      );
+      // Fallback: Vol/MCap ratio proxy (same logic as before DeFiLlama)
+      data.marketCap > 0
+        ? (data.volume24h / data.marketCap) * 100 * 5
+        : 0,
+      0,
+      50,
+    );
 
   // Sub-score B: DeFiLlama price confidence (0–20 pts)
   const confidenceScore = clamp(data.priceConfidence * 20, 0, 20);
@@ -335,22 +335,22 @@ export function calcLiquidityScore(data: LiquidityInput): ScoreResult {
   const tvlLabel = data.totalPoolTvlUsd >= 1e9
     ? `$${(data.totalPoolTvlUsd / 1e9).toFixed(2)}B`
     : data.totalPoolTvlUsd >= 1e6
-    ? `$${(data.totalPoolTvlUsd / 1e6).toFixed(2)}M`
-    : `$${(data.totalPoolTvlUsd / 1e3).toFixed(1)}K`;
+      ? `$${(data.totalPoolTvlUsd / 1e6).toFixed(2)}M`
+      : `$${(data.totalPoolTvlUsd / 1e3).toFixed(1)}K`;
 
   return {
     score: clamp(tvlScore + confidenceScore + exchangeScore + spreadScore),
     breakdown: {
-      "Total Pool TVL":          hasTvlData ? tvlLabel : "N/A (using proxy)",
-      "DEX Pool Count":          data.poolCount,
-      "Price Confidence":        data.priceConfidence > 0
+      "Total Pool TVL": hasTvlData ? tvlLabel : "N/A (using proxy)",
+      "DEX Pool Count": data.poolCount,
+      "Price Confidence": data.priceConfidence > 0
         ? `${(data.priceConfidence * 100).toFixed(0)}%`
         : "N/A",
-      "Exchange Listings (CG)":  data.tickerCount,
-      "24h Price Spread":        `${spread.toFixed(2)}%`,
-      "Est. Slippage @ 1%":      `~${slippage1pct}%`,
-      "Est. Slippage @ 5%":      `~${slippage5pct}%`,
-      "Data Source":             hasTvlData ? "DeFiLlama (real TVL)" : "CoinGecko proxy",
+      "Exchange Listings (CG)": data.tickerCount,
+      "24h Price Spread": `${spread.toFixed(2)}%`,
+      "Est. Slippage @ 1%": `~${slippage1pct}%`,
+      "Est. Slippage @ 5%": `~${slippage5pct}%`,
+      "Data Source": hasTvlData ? "DeFiLlama (real TVL)" : "CoinGecko proxy",
     },
   };
 }
@@ -377,19 +377,19 @@ export function calcLiquidityScore(data: LiquidityInput): ScoreResult {
 export function calcBridgeScore(chain: string): ScoreResult & { bridges: BridgeEntry[] } {
   const BRIDGE_DATA: Record<string, BridgeEntry[]> = {
     ethereum: [
-      { name: "Wormhole",       supported: true,  estimatedCost: "$3-8",   finalityMin: 15 },
-      { name: "CCIP (Chainlink)", supported: true, estimatedCost: "$5-15",  finalityMin: 20 },
-      { name: "LayerZero",      supported: true,  estimatedCost: "$2-6",   finalityMin: 10 },
+      { name: "Wormhole", supported: true, estimatedCost: "$3-8", finalityMin: 15 },
+      { name: "CCIP (Chainlink)", supported: true, estimatedCost: "$5-15", finalityMin: 20 },
+      { name: "LayerZero", supported: true, estimatedCost: "$2-6", finalityMin: 10 },
     ],
     bsc: [
-      { name: "Wormhole",       supported: true,  estimatedCost: "$1-4",   finalityMin: 5  },
-      { name: "CCIP (Chainlink)", supported: false, estimatedCost: "N/A",  finalityMin: 0  },
-      { name: "LayerZero",      supported: true,  estimatedCost: "$1-3",   finalityMin: 5  },
+      { name: "Wormhole", supported: true, estimatedCost: "$1-4", finalityMin: 5 },
+      { name: "CCIP (Chainlink)", supported: false, estimatedCost: "N/A", finalityMin: 0 },
+      { name: "LayerZero", supported: true, estimatedCost: "$1-3", finalityMin: 5 },
     ],
     polygon: [
-      { name: "Wormhole",       supported: true,  estimatedCost: "$0.5-2", finalityMin: 5  },
-      { name: "CCIP (Chainlink)", supported: true, estimatedCost: "$2-8",  finalityMin: 15 },
-      { name: "LayerZero",      supported: true,  estimatedCost: "$0.5-2", finalityMin: 5  },
+      { name: "Wormhole", supported: true, estimatedCost: "$0.5-2", finalityMin: 5 },
+      { name: "CCIP (Chainlink)", supported: true, estimatedCost: "$2-8", finalityMin: 15 },
+      { name: "LayerZero", supported: true, estimatedCost: "$0.5-2", finalityMin: 5 },
     ],
   };
 
@@ -404,11 +404,11 @@ export function calcBridgeScore(chain: string): ScoreResult & { bridges: BridgeE
     score: clamp(30 + supported.length * 20),
     bridges,
     breakdown: {
-      "Source Chain":          chain,
-      "Bridges Available":     supported.length,
-      "Fastest Bridge":        supported[0]?.name ?? "None",
+      "Source Chain": chain,
+      "Bridges Available": supported.length,
+      "Fastest Bridge": supported[0]?.name ?? "None",
       "Fastest Finality (min)": fastestFinality,
-      "Data Note":             "Static — live quotes TODO (Wormhole/LZ API)",
+      "Data Note": "Static — live quotes TODO (Wormhole/LZ API)",
     },
   };
 }
@@ -472,9 +472,9 @@ export function recommendStrategy(scores: AllScores): StrategyResult {
 
 export function calcOverallScore(scores: AllScores): number {
   return clamp(
-    scores.demand        * SCORE_WEIGHTS.demand +
+    scores.demand * SCORE_WEIGHTS.demand +
     scores.marketPresence * SCORE_WEIGHTS.marketPresence +
-    scores.liquidity     * SCORE_WEIGHTS.liquidity +
-    scores.bridgeRisk    * SCORE_WEIGHTS.bridgeRisk,
+    scores.liquidity * SCORE_WEIGHTS.liquidity +
+    scores.bridgeRisk * SCORE_WEIGHTS.bridgeRisk,
   );
 }
