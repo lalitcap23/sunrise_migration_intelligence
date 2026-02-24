@@ -1,7 +1,4 @@
 /**
- * app/api/analyze/route.ts
- * POST /api/analyze
- *
  * This route is a THIN ORCHESTRATOR. Its only jobs are:
  *  1. Validate the incoming request
  *  2. Fetch raw data from CoinGecko (via lib/coingecko.ts)
@@ -85,20 +82,20 @@ export async function POST(req: NextRequest) {
     const md = coinData.market_data ?? {};
     const cd = coinData.community_data ?? {};
 
-    const volume24h    = (md.total_volume as Record<string, number>)?.usd ?? 0;
-    const marketCap    = (md.market_cap as Record<string, number>)?.usd ?? 0;
+    const volume24h = (md.total_volume as Record<string, number>)?.usd ?? 0;
+    const marketCap = (md.market_cap as Record<string, number>)?.usd ?? 0;
     const currentPrice = (md.current_price as Record<string, number>)?.usd ?? 0;
-    const high24h      = (md.high_24h as Record<string, number>)?.usd ?? currentPrice * 1.05;
-    const low24h       = (md.low_24h as Record<string, number>)?.usd ?? currentPrice * 0.95;
+    const high24h = (md.high_24h as Record<string, number>)?.usd ?? currentPrice * 1.05;
+    const low24h = (md.low_24h as Record<string, number>)?.usd ?? currentPrice * 0.95;
 
-    const marketCapRank  = md.market_cap_rank ?? null;
-    const priceChange7d  = md.price_change_percentage_7d ?? 0;
+    const marketCapRank = md.market_cap_rank ?? null;
+    const priceChange7d = md.price_change_percentage_7d ?? 0;
     const priceChange30d = md.price_change_percentage_30d ?? 0;
     const circulatingSupply = md.circulating_supply ?? 0;
-    const totalSupply       = md.total_supply ?? circulatingSupply;
+    const totalSupply = md.total_supply ?? circulatingSupply;
 
     const watchlistUsers = coinData.watchlist_portfolio_users ?? 0;
-    const tickerCount    = (coinData.tickers ?? []).length;
+    const tickerCount = (coinData.tickers ?? []).length;
 
     // ── Step 4: Run scoring engine ────────────────────────────────────────────
     //   All logic lives in lib/scoring.ts. Route only wires inputs → outputs.
@@ -114,18 +111,18 @@ export async function POST(req: NextRequest) {
     // Use real Etherscan holder data — holderData.supported=false means BSC
     // without a BscScan key, so the scoring function uses neutral defaults.
     const marketPresenceResult = calcMarketPresenceScore({
-      uniqueRecipients:     holderData.uniqueRecipients,
-      top10TransferPct:     holderData.top10TransferPct,
-      holderDataAvailable:  holderData.supported && holderData.uniqueRecipients > 0,
+      uniqueRecipients: holderData.uniqueRecipients,
+      top10TransferPct: holderData.top10TransferPct,
+      holderDataAvailable: holderData.supported && holderData.uniqueRecipients > 0,
       tickerCount,
       watchlistUsers,
     });
 
     // Real TVL from DeFiLlama as primary; CoinGecko signals as secondary/fallback
     const liquidityResult = calcLiquidityScore({
-      totalPoolTvlUsd:   liquidityData.totalPoolTvlUsd,
-      poolCount:         liquidityData.poolCount,
-      priceConfidence:   liquidityData.priceConfidence,
+      totalPoolTvlUsd: liquidityData.totalPoolTvlUsd,
+      poolCount: liquidityData.poolCount,
+      priceConfidence: liquidityData.priceConfidence,
       volume24h,
       marketCap,
       tickerCount,
@@ -136,18 +133,18 @@ export async function POST(req: NextRequest) {
     const bridgeResult = calcBridgeScore(chain);
 
     const allScores = {
-      demand:         demandResult.score,
+      demand: demandResult.score,
       marketPresence: marketPresenceResult.score,
-      liquidity:      liquidityResult.score,
-      bridgeRisk:     bridgeResult.score,
+      liquidity: liquidityResult.score,
+      bridgeRisk: bridgeResult.score,
     };
 
     const strategyResult = recommendStrategy(allScores);
-    const overallScore   = calcOverallScore(allScores);
+    const overallScore = calcOverallScore(allScores);
 
     // ── Step 5: Build 30-day volume history for charts ────────────────────────
     const volumeHistory = (chartData.total_volumes ?? []).map((entry: number[]) => ({
-      date:      new Date(entry[0] ?? 0).toISOString().split("T")[0],
+      date: new Date(entry[0] ?? 0).toISOString().split("T")[0],
       volumeUsd: Math.round(entry[1] ?? 0),
     }));
 
@@ -155,11 +152,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       // Token identity
       token: {
-        address:            token,
+        address: token,
         chain,
-        name:               coinData.name ?? "Unknown",
-        symbol:             coinData.symbol?.toUpperCase() ?? "???",
-        image:              (coinData.image as Record<string, string>)?.small ?? null,
+        name: coinData.name ?? "Unknown",
+        symbol: coinData.symbol?.toUpperCase() ?? "???",
+        image: (coinData.image as Record<string, string>)?.small ?? null,
         currentPrice,
         marketCap,
         circulatingSupply,
@@ -170,51 +167,54 @@ export async function POST(req: NextRequest) {
 
       // Top-level scores (for the summary card in the UI)
       scores: {
-        demand:         demandResult.score,
+        demand: demandResult.score,
         marketPresence: marketPresenceResult.score,
-        liquidity:      liquidityResult.score,
-        bridgeRisk:     bridgeResult.score,
-        overall:        overallScore,
+        liquidity: liquidityResult.score,
+        bridgeRisk: bridgeResult.score,
+        overall: overallScore,
       },
 
       // Per-module detail (for the breakdown tables in the UI)
       modules: {
         demand: {
-          score:     demandResult.score,
+          score: demandResult.score,
           breakdown: demandResult.breakdown,
         },
         marketPresence: {
-          score:     marketPresenceResult.score,
+          score: marketPresenceResult.score,
           breakdown: marketPresenceResult.breakdown,
           // Raw Etherscan data for the UI (top holder list, etc.)
           holderData: {
-            uniqueRecipients:         holderData.uniqueRecipients,
-            top10TransferPct:         holderData.top10TransferPct,
-            top10Addresses:           holderData.top10Addresses,
-            totalTransfersAnalyzed:   holderData.totalTransfersAnalyzed,
-            supported:                holderData.supported,
-            dataNote:                 holderData.dataNote,
+            uniqueRecipients: holderData.uniqueRecipients,
+            top10TransferPct: holderData.top10TransferPct,
+            top10Addresses: holderData.top10Addresses,
+            totalTransfersAnalyzed: holderData.totalTransfersAnalyzed,
+            supported: holderData.supported,
+            dataNote: holderData.dataNote,
           },
         },
         liquidity: {
-          score:     liquidityResult.score,
+          score: liquidityResult.score,
           breakdown: liquidityResult.breakdown,
+          // AMM slippage estimates for 4 reference trade sizes (DeFiLlama TVL-based)
+          slippage: liquidityResult.slippage,
+          slippageNote: liquidityResult.slippageNote,
           // Raw DeFiLlama data for the UI (top pool list, TVL, confidence)
           poolData: {
             totalPoolTvlUsd: liquidityData.totalPoolTvlUsd,
-            poolCount:       liquidityData.poolCount,
-            topPools:        liquidityData.topPools,
+            poolCount: liquidityData.poolCount,
+            topPools: liquidityData.topPools,
             priceConfidence: liquidityData.priceConfidence,
-            dataNote:        liquidityData.dataNote,
+            dataNote: liquidityData.dataNote,
           },
         },
         bridgeRisk: {
-          score:     bridgeResult.score,
+          score: bridgeResult.score,
           breakdown: bridgeResult.breakdown,
-          bridges:   bridgeResult.bridges,
+          bridges: bridgeResult.bridges,
         },
         strategy: strategyResult,
-        overall:  overallScore,
+        overall: overallScore,
       },
 
       // Raw chart data (for Recharts volume bar chart)

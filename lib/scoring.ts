@@ -1,5 +1,4 @@
 /**
- * lib/scoring.ts
  * ─────────────────────────────────────────────────────────────────────────────
  * MIGRATION READINESS SCORING ENGINE
  *
@@ -7,7 +6,7 @@
  * The API route (app/api/analyze/route.ts) only fetches raw data; it then
  * passes that data into the functions here to produce scores.
  *
- * WHY a separate file?
+ * WHY a separate file
  *  - You can unit-test every scoring function in isolation (no HTTP needed).
  *  - When you add a new data source (e.g. Moralis for real holder counts),
  *    you only change the inputs here — the route stays the same.
@@ -24,15 +23,15 @@
  *
  * MODULE OVERVIEW
  * ───────────────
- * Module 1: Market Demand       — CoinGecko (live ✅)
- * Module 2: Market Presence     — CoinGecko community proxy (live ✅)
+ * Module 1: Market Demand       — CoinGecko (live done)
+ * Module 2: Market Presence     — CoinGecko community proxy (live done )
  *                                 FUTURE: Moralis/Alchemy for real holder count
- * Module 3: Liquidity Profile   — CoinGecko tickers + volume (live ✅)
+ * Module 3: Liquidity Profile   — CoinGecko tickers + volume (live done )
  *                                 FUTURE: DeFiLlama TVL API for deeper pool data
- * Module 4: Bridge Risk         — Static hardcode (live ✅)
+ * Module 4: Bridge Risk         — Static hardcode (live done)
  *                                 FUTURE: Wormhole API + LayerZero API for real quotes
- * Module 5: Migration Strategy  — Derived from modules 1–4 (live ✅)
- * Module 6: Overall Score       — Weighted average (live ✅)
+ * Module 5: Migration Strategy  — Derived from modules 1–4 (live done)
+ * Module 6: Overall Score       — Weighted average (live done)
  */
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
@@ -44,6 +43,26 @@
 export type ScoreResult = {
   score: number; // 0–100, integer
   breakdown: Record<string, string | number>;
+};
+
+/**
+ * Slippage estimate for a specific trade size.
+ * Computed using the AMM constant-product formula:
+ *   slippagePct = (tradeSize / (2 × totalPoolTvlUsd)) × 100
+ * This is accurate for Uniswap v2-style pools and a reasonable approximation
+ * for concentrated liquidity pools at normal market conditions.
+ */
+export type SlippageEstimate = {
+  tradeSizeUsd: number;             // reference trade size in USD
+  label: string;                    // display label e.g. "$100K"
+  slippagePct: number | null;       // null when TVL data unavailable
+  riskLevel: "Low" | "Moderate" | "High" | "Very High" | "N/A";
+};
+
+/** Extended result type for the liquidity module — includes slippage estimates. */
+export type LiquidityScoreResult = ScoreResult & {
+  slippage: SlippageEstimate[];     // AMM slippage for 4 reference trade sizes
+  slippageNote: string;             // human-readable data source note
 };
 
 /** One bridge entry returned in the Bridge Risk module. */
@@ -299,7 +318,15 @@ export type LiquidityInput = {
   low24h: number;      // market_data.low_24h.usd
 };
 
-export function calcLiquidityScore(data: LiquidityInput): ScoreResult {
+// Reference trade sizes used for AMM slippage estimation
+const SLIPPAGE_TRADE_SIZES: { usd: number; label: string }[] = [
+  { usd: 10_000, label: "$10K" },
+  { usd: 100_000, label: "$100K" },
+  { usd: 500_000, label: "$500K" },
+  { usd: 1_000_000, label: "$1M" },
+];
+
+export function calcLiquidityScore(data: LiquidityInput): LiquidityScoreResult {
   // Sub-score A: Real pool TVL from DeFiLlama (primary — 0–50 pts)
   // log10 scale: $0=0 | $1M≈30 | $10M≈40 | $100M≈44 | $1B≈50
   // Falls back to Vol/MCap ratio if no DeFiLlama data (tvl=0, poolCount=0)
@@ -328,9 +355,6 @@ export function calcLiquidityScore(data: LiquidityInput): ScoreResult {
       : 10;
   const spreadScore = clamp(15 - spread * 1.5, 0, 15);
 
-  const slippage1pct = (spread * 0.1).toFixed(3);
-  const slippage5pct = (spread * 0.5).toFixed(3);
-
   // TVL label for UI
   const tvlLabel = data.totalPoolTvlUsd >= 1e9
     ? `$${(data.totalPoolTvlUsd / 1e9).toFixed(2)}B`
@@ -338,20 +362,64 @@ export function calcLiquidityScore(data: LiquidityInput): ScoreResult {
       ? `$${(data.totalPoolTvlUsd / 1e6).toFixed(2)}M`
       : `$${(data.totalPoolTvlUsd / 1e3).toFixed(1)}K`;
 
+  // ── AMM Slippage Estimation (Option 1 — DeFiLlama TVL) ──────────────────────
+  //
+  // Formula:  slippage% = tradeSize / (2 × totalPoolTvlUsd) × 100
+  //
+  // Derivation: For a constant-product AMM (x*y=k), price impact for a trade
+  // of size Δx into a pool of depth L (≈ TVL/2 per side) is:
+  //   impact ≈ Δx / L = tradeSize / (TVL/2) = tradeSize / (2 × TVL) × 100
+  //
+  // This is a lower-bound estimate (underestimates real slippage for
+  // concentrated liquidity pools outside the active tick range).
+  // It works well as a migration risk signal — if even this lower bound
+  // is high, the token has dangerously thin liquidity.
+  //
+  // Risk thresholds (industry convention, Uniswap/Messari research):
+  //   < 0.1%  → Low      (deep liquidity, institutional-grade)
+  //   0.1–1%  → Moderate (healthy retail liquidity)
+  //   1–5%    → High     (thin — significant price impact)
+  //   > 5%    → Very High (illiquid — migration is costly)
+  //
+  const slippage: SlippageEstimate[] = SLIPPAGE_TRADE_SIZES.map(({ usd, label }) => {
+    if (!hasTvlData || data.totalPoolTvlUsd === 0) {
+      return { tradeSizeUsd: usd, label, slippagePct: null, riskLevel: "N/A" as const };
+    }
+    const pct = (usd / (2 * data.totalPoolTvlUsd)) * 100;
+    const riskLevel =
+      pct < 0.1 ? "Low" as const
+        : pct < 1 ? "Moderate" as const
+          : pct < 5 ? "High" as const
+            : "Very High" as const;
+    return {
+      tradeSizeUsd: usd,
+      label,
+      slippagePct: parseFloat(pct.toFixed(4)),
+      riskLevel,
+    };
+  });
+
+  const slippageNote = hasTvlData
+    ? `AMM formula: tradeSize / (2 × ${tvlLabel} TVL). Lower-bound estimate for constant-product pools.`
+    : "Slippage unavailable — no DeFiLlama TVL data for this token.";
+
   return {
     score: clamp(tvlScore + confidenceScore + exchangeScore + spreadScore),
     breakdown: {
       "Total Pool TVL": hasTvlData ? tvlLabel : "N/A (using proxy)",
       "DEX Pool Count": data.poolCount,
       "Price Confidence": data.priceConfidence > 0
-        ? `${(data.priceConfidence * 100).toFixed(0)}%`
-        : "N/A",
+        ? `${(data.priceConfidence * 100).toFixed(0)}%` : "N/A",
       "Exchange Listings (CG)": data.tickerCount,
       "24h Price Spread": `${spread.toFixed(2)}%`,
-      "Est. Slippage @ 1%": `~${slippage1pct}%`,
-      "Est. Slippage @ 5%": `~${slippage5pct}%`,
+      "Slippage $10K trade": slippage[0]?.slippagePct != null ? `~${slippage[0].slippagePct}% (${slippage[0].riskLevel})` : "N/A",
+      "Slippage $100K trade": slippage[1]?.slippagePct != null ? `~${slippage[1].slippagePct}% (${slippage[1].riskLevel})` : "N/A",
+      "Slippage $500K trade": slippage[2]?.slippagePct != null ? `~${slippage[2].slippagePct}% (${slippage[2].riskLevel})` : "N/A",
+      "Slippage $1M trade": slippage[3]?.slippagePct != null ? `~${slippage[3].slippagePct}% (${slippage[3].riskLevel})` : "N/A",
       "Data Source": hasTvlData ? "DeFiLlama (real TVL)" : "CoinGecko proxy",
     },
+    slippage,
+    slippageNote,
   };
 }
 

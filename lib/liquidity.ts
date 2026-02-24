@@ -1,7 +1,5 @@
 /**
- * lib/liquidity.ts
- * ─────────────────────────────────────────────────────────────────────────────
- * LIQUIDITY DATA FETCHER — DeFiLlama API (completely free, no API key needed)
+* LIQUIDITY DATA FETCHER — DeFiLlama API (completely free, no API key needed)
  *
  * ENDPOINTS USED:
  * ┌──────────────────────────────────────────────┬──────────────┬────────────┐

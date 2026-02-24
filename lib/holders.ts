@@ -1,14 +1,10 @@
 /**
- * lib/holders.ts
- * ─────────────────────────────────────────────────────────────────────────────
  * HOLDER DATA FETCHER — Etherscan V2 API (free tier)
  *
- * WHY Etherscan V2?
+ * Etherscan V2!
  *  - One API key works for Ethereum (chainid=1) and Polygon (chainid=137).
- *  - BSC (chainid=56) requires a separate BscScan key (free at bscscan.com).
- *  - V1 (api.etherscan.io/api) is deprecated — we use V2.
- *
- * FREE ENDPOINTS USED:
+
+* FREE ENDPOINTS USED:
  *  1. stats/tokensupply   → raw total supply of the token
  *  2. account/tokentx     → last N token transfer events (up to 10k per call)
  *
@@ -28,7 +24,7 @@
  *  │                          │ share of recent transfers.                   │
  *  └──────────────────────────┴──────────────────────────────────────────────┘
  *
- * ⚠️  IMPORTANT LIMITATION:
+ *  IMPORTANT LIMITATION:
  *  This is NOT the same as "top 10 holders by total balance".
  *  It measures concentration of RECENT TRANSFER ACTIVITY.
  *  For total balance concentration you need Etherscan Pro or Moralis.
@@ -36,8 +32,8 @@
  *  it shows accumulation behaviour, which is meaningful for migration.
  *
  * CHAIN SUPPORT:
- *  - ethereum → chainid=1  (this key ✅)
- *  - polygon  → chainid=137 (this key ✅)
+ *  - ethereum → chainid=1  (this key done )
+ *  - polygon  → chainid=137 (this key done)
  *  - bsc      → chainid=56  (needs BscScan key — fallback to null data)
  */
 

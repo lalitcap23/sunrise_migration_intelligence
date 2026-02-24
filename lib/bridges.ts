@@ -1,6 +1,4 @@
 /**
- * lib/bridges.ts
- * ─────────────────────────────────────────────────────────────────────────────
  * BRIDGE DATA MODULE
  *
  * Returns enriched bridge entries for a given source chain, combining:
@@ -11,15 +9,8 @@
  *     Gives us: availableNotional, notionalLimit, maxTransactionSize (all USD)
  *     which lets us show real capacity %, congestion level, and max single-tx size.
  *
- *  2. CCIP (Chainlink)  — Static (no free public API for real-time quotes)
- *     CCIP does NOT support BSC→Solana natively. ETH and Polygon are supported.
- *     Source: https://docs.chain.link/ccip/supported-networks
- *
- *  3. LayerZero         — Static (LayerZero Scan API requires project registration)
- *     All three chains (ETH, BSC, Polygon) can route to Solana via LayerZero OFT.
- *     Source: https://layerzeroscan.com
- *
- * WHY STATIC FOR CCIP/LZ?
+
+ * WHY STATIC FOR CCIP/LZ
  *  Their live APIs require project API keys or are not publicly accessible.
  *  Static cost/finality estimates are sourced from each protocol's public docs
  *  and are clearly labelled so users know they're estimates.
@@ -31,6 +22,11 @@
 
 // ─── Wormhole chain IDs ───────────────────────────────────────────────────────
 // Source: https://docs.wormhole.com/wormhole/reference/constants
+
+
+//capacityPct  = availableNotional / notionalLimit × 100
+//congestion   = "Low" if <30% used | "Moderate" <70% | "High" ≥70%
+
 const WORMHOLE_CHAIN_ID: Record<string, number> = {
     ethereum: 2,
     bsc: 4,
