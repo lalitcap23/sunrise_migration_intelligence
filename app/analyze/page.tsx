@@ -47,6 +47,53 @@ interface AnalysisResult {
     liquidity: {
       score: number;
       breakdown: Record<string, string | number>;
+      slippage: {
+        tradeSizeUsd: number;
+        label: string;
+        slippagePct: number | null;
+        riskLevel: "Low" | "Moderate" | "High" | "Very High" | "N/A";
+      }[];
+      slippageNote: string;
+      sim: {
+        hasTvlData: boolean;
+        note: string;
+        seededTvlUsd: number;
+        currentChain: {
+          label: string;
+          tvlUsd: number;
+          slippageTiers: {
+            tradeSizeUsd: number;
+            label: string;
+            slippagePct: number | null;
+            riskLevel: "Low" | "Moderate" | "High" | "Very High" | "N/A";
+          }[];
+          depth1PctUsd: number;
+          depth5PctUsd: number;
+        };
+        solana: {
+          label: string;
+          tvlUsd: number;
+          slippageTiers: {
+            tradeSizeUsd: number;
+            label: string;
+            slippagePct: number | null;
+            riskLevel: "Low" | "Moderate" | "High" | "Very High" | "N/A";
+          }[];
+          depth1PctUsd: number;
+          depth5PctUsd: number;
+        };
+        recommendation: {
+          minLpUsd: number;
+          targetLpUsd: number;
+          rationale: string;
+        };
+        migrationCost: {
+          bridgeFeeRange: string;
+          bridgeFeeUsd: number;
+          lpSeedUsd: number;
+          totalEstUsd: number;
+        };
+      };
       poolData: {
         totalPoolTvlUsd: number;
         poolCount: number;
@@ -97,6 +144,226 @@ function BreakdownTable({ breakdown }: { breakdown: Record<string, string | numb
         ))}
       </tbody>
     </table>
+  );
+}
+
+// ─── Risk badge colours ───────────────────────────────────────────────────────
+const RISK_COLOR: Record<string, string> = {
+  Low:       "#22c55e",
+  Moderate:  "#84cc16",
+  High:      "#eab308",
+  "Very High": "#ef4444",
+  "N/A":     "#71717a",
+};
+const RISK_BG: Record<string, string> = {
+  Low:       "rgba(34,197,94,0.12)",
+  Moderate:  "rgba(132,204,22,0.12)",
+  High:      "rgba(234,179,8,0.12)",
+  "Very High": "rgba(239,68,68,0.12)",
+  "N/A":     "rgba(113,113,122,0.12)",
+};
+
+type SlippageTierUI = {
+  tradeSizeUsd: number;
+  label: string;
+  slippagePct: number | null;
+  riskLevel: "Low" | "Moderate" | "High" | "Very High" | "N/A";
+};
+
+function SlippageTable({ tiers, title, tvlUsd, depth1, depth5 }: {
+  tiers: SlippageTierUI[];
+  title: string;
+  tvlUsd: number;
+  depth1: number;
+  depth5: number;
+}) {
+  const fmtUsd = (n: number) =>
+    n >= 1_000_000 ? `$${(n / 1_000_000).toFixed(2)}M`
+    : n >= 1_000 ? `$${(n / 1_000).toFixed(1)}K`
+    : `$${n.toFixed(0)}`;
+
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
+        <p style={{ margin: 0, fontWeight: 600, fontSize: 13, color: "#e5e5e5" }}>{title}</p>
+        <span style={{ fontSize: 11, color: "#52525b" }}>
+          Pool TVL: {tvlUsd > 0 ? fmtUsd(tvlUsd) : "N/A"}
+        </span>
+      </div>
+      <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
+        <thead>
+          <tr style={{ borderBottom: "1px solid #27272a" }}>
+            <th style={{ padding: "8px 0", textAlign: "left",  color: "#71717a", fontWeight: 500 }}>Trade Size</th>
+            <th style={{ padding: "8px 0", textAlign: "right", color: "#71717a", fontWeight: 500 }}>Price Impact</th>
+            <th style={{ padding: "8px 0", textAlign: "right", color: "#71717a", fontWeight: 500 }}>Risk</th>
+          </tr>
+        </thead>
+        <tbody>
+          {tiers.map((t) => (
+            <tr key={t.label} style={{ borderBottom: "1px solid #1a1a1e" }}>
+              <td style={{ padding: "11px 0", color: "#d4d4d8", fontFamily: "monospace" }}>{t.label}</td>
+              <td style={{ padding: "11px 0", textAlign: "right", color: t.slippagePct != null ? RISK_COLOR[t.riskLevel] : "#52525b", fontFamily: "monospace", fontWeight: 600 }}>
+                {t.slippagePct != null ? `~${t.slippagePct < 0.001 ? "<0.001" : t.slippagePct}%` : "N/A"}
+              </td>
+              <td style={{ padding: "11px 0", textAlign: "right" }}>
+                <span style={{
+                  fontSize: 11, padding: "3px 9px", borderRadius: 12,
+                  background: RISK_BG[t.riskLevel],
+                  color: RISK_COLOR[t.riskLevel],
+                  fontWeight: 600,
+                }}>
+                  {t.riskLevel}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {tvlUsd > 0 && (
+        <div style={{ display: "flex", gap: 16, marginTop: 12 }}>
+          <div style={{ flex: 1, background: "#0f0f13", borderRadius: 8, padding: "10px 14px", border: "1px solid #1f1f27" }}>
+            <p style={{ margin: 0, fontSize: 10, color: "#52525b", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>1% Depth</p>
+            <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "#e5e5e5" }}>{fmtUsd(depth1)}</p>
+          </div>
+          <div style={{ flex: 1, background: "#0f0f13", borderRadius: 8, padding: "10px 14px", border: "1px solid #1f1f27" }}>
+            <p style={{ margin: 0, fontSize: 10, color: "#52525b", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>5% Depth</p>
+            <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "#e5e5e5" }}>{fmtUsd(depth5)}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+type SimData = AnalysisResult["modules"]["liquidity"]["sim"];
+
+function LiquiditySimPanel({ sim }: { sim: SimData }) {
+  const fmtUsd = (n: number) =>
+    n >= 1_000_000_000 ? `$${(n / 1_000_000_000).toFixed(2)}B`
+    : n >= 1_000_000 ? `$${(n / 1_000_000).toFixed(2)}M`
+    : n >= 1_000 ? `$${(n / 1_000).toFixed(1)}K`
+    : `$${n.toFixed(0)}`;
+
+  return (
+    <div style={{ marginTop: 24 }}>
+      {/* Section header */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 10, marginBottom: 20,
+        paddingTop: 20, borderTop: "1px solid #27272a",
+      }}>
+        <div style={{
+          fontSize: 18,
+          background: "linear-gradient(135deg, #9945FF, #14F195)",
+          WebkitBackgroundClip: "text",
+          WebkitTextFillColor: "transparent",
+        }}>⬡</div>
+        <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "#e5e5e5" }}>
+          Solana Migration Simulation
+        </h4>
+        <span style={{
+          fontSize: 10, padding: "2px 8px", borderRadius: 10,
+          background: "rgba(153,69,255,0.15)", color: "#b980ff",
+          fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px",
+        }}>CPMM Model</span>
+      </div>
+
+      {!sim.hasTvlData ? (
+        <div style={{ padding: 16, background: "rgba(239,68,68,0.08)", borderRadius: 10, border: "1px solid rgba(239,68,68,0.2)", marginBottom: 20 }}>
+          <p style={{ margin: 0, fontSize: 13, color: "#f87171" }}>⚠ {sim.note}</p>
+        </div>
+      ) : (
+        <>
+          {/* A. Current chain slippage */}
+          <SlippageTable
+            title={`${sim.currentChain.label} — Current DEX Slippage`}
+            tiers={sim.currentChain.slippageTiers}
+            tvlUsd={sim.currentChain.tvlUsd}
+            depth1={sim.currentChain.depth1PctUsd}
+            depth5={sim.currentChain.depth5PctUsd}
+          />
+
+          {/* B. Solana projection */}
+          <div style={{
+            padding: "3px",
+            borderRadius: 14,
+            background: "linear-gradient(135deg, rgba(153,69,255,0.4) 0%, rgba(20,241,149,0.4) 100%)",
+            marginBottom: 20,
+          }}>
+            <div style={{ background: "#0d0d12", borderRadius: 12, padding: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+                <span style={{ fontSize: 16 }}>◎</span>
+                <p style={{ margin: 0, fontSize: 12, color: "#a1a1aa" }}>
+                  Estimates a new Raydium/Orca pool seeded with{" "}
+                  <strong style={{ color: "#b980ff" }}>{fmtUsd(sim.seededTvlUsd)}</strong>
+                  {" "}(10% of current TVL). CPMM x·y=k model.
+                </p>
+              </div>
+              <SlippageTable
+                title={`${sim.solana.label}`}
+                tiers={sim.solana.slippageTiers}
+                tvlUsd={sim.solana.tvlUsd}
+                depth1={sim.solana.depth1PctUsd}
+                depth5={sim.solana.depth5PctUsd}
+              />
+            </div>
+          </div>
+
+          {/* C. LP seed recommendation */}
+          <div style={{
+            padding: 16,
+            background: "rgba(20,241,149,0.06)",
+            border: "1px solid rgba(20,241,149,0.2)",
+            borderRadius: 12,
+            marginBottom: 16,
+          }}>
+            <p style={{ margin: "0 0 6px", fontSize: 12, color: "#71717a", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 600 }}>LP Seed Recommendation</p>
+            <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 10 }}>
+              <div>
+                <p style={{ margin: 0, fontSize: 11, color: "#52525b" }}>Min (for $10K trades &lt;1%)</p>
+                <p style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#14F195" }}>{fmtUsd(sim.recommendation.minLpUsd)}</p>
+              </div>
+              <div style={{ width: 1, background: "#27272a" }} />
+              <div>
+                <p style={{ margin: 0, fontSize: 11, color: "#52525b" }}>Target (for $100K trades &lt;1%)</p>
+                <p style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#14F195" }}>{fmtUsd(sim.recommendation.targetLpUsd)}</p>
+              </div>
+            </div>
+            <p style={{ margin: "12px 0 0", fontSize: 12, color: "#71717a", lineHeight: 1.5 }}>{sim.recommendation.rationale}</p>
+          </div>
+
+          {/* D. Migration cost breakdown */}
+          <div style={{
+            padding: 16,
+            background: "rgba(139,92,246,0.06)",
+            border: "1px solid rgba(139,92,246,0.2)",
+            borderRadius: 12,
+          }}>
+            <p style={{ margin: "0 0 12px", fontSize: 12, color: "#71717a", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 600 }}>Migration Cost Estimate</p>
+            <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
+              <tbody>
+                <tr style={{ borderBottom: "1px solid #1f1f27" }}>
+                  <td style={{ padding: "10px 0", color: "#a1a1aa" }}>Bridge Fees (one-way)</td>
+                  <td style={{ padding: "10px 0", textAlign: "right", fontWeight: 600, color: "#e5e5e5" }}>{sim.migrationCost.bridgeFeeRange}</td>
+                </tr>
+                <tr style={{ borderBottom: "1px solid #1f1f27" }}>
+                  <td style={{ padding: "10px 0", color: "#a1a1aa" }}>Recommended LP Seed</td>
+                  <td style={{ padding: "10px 0", textAlign: "right", fontWeight: 600, color: "#e5e5e5" }}>{fmtUsd(sim.migrationCost.lpSeedUsd)}</td>
+                </tr>
+                <tr>
+                  <td style={{ padding: "12px 0 0", color: "#ffffff", fontWeight: 700 }}>Total Estimated Cost</td>
+                  <td style={{ padding: "12px 0 0", textAlign: "right", fontWeight: 700, fontSize: 16, color: "#8b5cf6" }}>{fmtUsd(sim.migrationCost.totalEstUsd)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {/* Model note */}
+      <p style={{ margin: "14px 0 0", fontSize: 11, color: "#3f3f46", lineHeight: 1.5 }}>
+        ℹ {sim.note}
+      </p>
+    </div>
   );
 }
 
@@ -509,6 +776,10 @@ export default function AnalyzePage() {
                       </ul>
                     )}
                   </div>
+                  {/* ── Liquidity Simulation Panel ─────────────────────────────────── */}
+                  {result.modules.liquidity.sim && (
+                    <LiquiditySimPanel sim={result.modules.liquidity.sim} />
+                  )}
                 </div>
               </details>
 

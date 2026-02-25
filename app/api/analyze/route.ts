@@ -125,9 +125,11 @@ export async function POST(req: NextRequest) {
       priceConfidence: liquidityData.priceConfidence,
       volume24h,
       marketCap,
+      currentPrice,
       tickerCount,
       high24h,
       low24h,
+      chain,
     });
 
     const bridgeResult = calcBridgeScore(chain);
@@ -199,6 +201,8 @@ export async function POST(req: NextRequest) {
           // AMM slippage estimates for 4 reference trade sizes (DeFiLlama TVL-based)
           slippage: liquidityResult.slippage,
           slippageNote: liquidityResult.slippageNote,
+          // Solana post-migration CPMM simulation
+          sim: liquidityResult.sim,
           // Raw DeFiLlama data for the UI (top pool list, TVL, confidence)
           poolData: {
             totalPoolTvlUsd: liquidityData.totalPoolTvlUsd,

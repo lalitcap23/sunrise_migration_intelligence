@@ -1,3 +1,6 @@
+import { runLiquiditySim, type LiquiditySimResult } from "./liquidity-sim";
+export type { LiquiditySimResult };
+
 /**
  * ─────────────────────────────────────────────────────────────────────────────
  * MIGRATION READINESS SCORING ENGINE
@@ -59,10 +62,11 @@ export type SlippageEstimate = {
   riskLevel: "Low" | "Moderate" | "High" | "Very High" | "N/A";
 };
 
-/** Extended result type for the liquidity module — includes slippage estimates. */
+/** Extended result type for the liquidity module — includes slippage estimates and Solana sim. */
 export type LiquidityScoreResult = ScoreResult & {
   slippage: SlippageEstimate[];     // AMM slippage for 4 reference trade sizes
   slippageNote: string;             // human-readable data source note
+  sim: LiquiditySimResult;          // Solana post-migration CPMM simulation
 };
 
 /** One bridge entry returned in the Bridge Risk module. */
@@ -313,16 +317,18 @@ export type LiquidityInput = {
   // From CoinGecko — secondary / always available
   volume24h: number;   // market_data.total_volume.usd (fallback signal)
   marketCap: number;   // market_data.market_cap.usd   (fallback signal)
+  currentPrice: number; // market_data.current_price.usd (for CPMM pool reserve derivation)
   tickerCount: number; // tickers[].length
   high24h: number;     // market_data.high_24h.usd
   low24h: number;      // market_data.low_24h.usd
+  chain: string;       // source chain — passed through to sim for bridge cost lookup
 };
 
 // Reference trade sizes used for AMM slippage estimation
 const SLIPPAGE_TRADE_SIZES: { usd: number; label: string }[] = [
+  { usd: 1_000, label: "$1K" },
   { usd: 10_000, label: "$10K" },
   { usd: 100_000, label: "$100K" },
-  { usd: 500_000, label: "$500K" },
   { usd: 1_000_000, label: "$1M" },
 ];
 
@@ -403,6 +409,9 @@ export function calcLiquidityScore(data: LiquidityInput): LiquidityScoreResult {
     ? `AMM formula: tradeSize / (2 × ${tvlLabel} TVL). Lower-bound estimate for constant-product pools.`
     : "Slippage unavailable — no DeFiLlama TVL data for this token.";
 
+  // ── Solana post-migration simulation ────────────────────────────────────────
+  const sim = runLiquiditySim(data.totalPoolTvlUsd, data.currentPrice, data.chain);
+
   return {
     score: clamp(tvlScore + confidenceScore + exchangeScore + spreadScore),
     breakdown: {
@@ -412,14 +421,15 @@ export function calcLiquidityScore(data: LiquidityInput): LiquidityScoreResult {
         ? `${(data.priceConfidence * 100).toFixed(0)}%` : "N/A",
       "Exchange Listings (CG)": data.tickerCount,
       "24h Price Spread": `${spread.toFixed(2)}%`,
-      "Slippage $10K trade": slippage[0]?.slippagePct != null ? `~${slippage[0].slippagePct}% (${slippage[0].riskLevel})` : "N/A",
-      "Slippage $100K trade": slippage[1]?.slippagePct != null ? `~${slippage[1].slippagePct}% (${slippage[1].riskLevel})` : "N/A",
-      "Slippage $500K trade": slippage[2]?.slippagePct != null ? `~${slippage[2].slippagePct}% (${slippage[2].riskLevel})` : "N/A",
+      "Slippage $1K trade": slippage[0]?.slippagePct != null ? `~${slippage[0].slippagePct}% (${slippage[0].riskLevel})` : "N/A",
+      "Slippage $10K trade": slippage[1]?.slippagePct != null ? `~${slippage[1].slippagePct}% (${slippage[1].riskLevel})` : "N/A",
+      "Slippage $100K trade": slippage[2]?.slippagePct != null ? `~${slippage[2].slippagePct}% (${slippage[2].riskLevel})` : "N/A",
       "Slippage $1M trade": slippage[3]?.slippagePct != null ? `~${slippage[3].slippagePct}% (${slippage[3].riskLevel})` : "N/A",
       "Data Source": hasTvlData ? "DeFiLlama (real TVL)" : "CoinGecko proxy",
     },
     slippage,
     slippageNote,
+    sim,
   };
 }
 

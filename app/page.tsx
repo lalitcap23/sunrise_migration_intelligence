@@ -152,8 +152,8 @@ export default function Home() {
             <span className="text-white font-medium">
               Migration Readiness Analyzer
             </span>{" "}
-            evaluates any token from Ethereum, BNB Chain, or Polygon and tells
-            you exactly <em className="text-violet-300 not-italic">if</em> and{" "}
+            evaluates any token from Ethereum, BSC or Polygon and tells you
+            exactly <em className="text-violet-300 not-italic">if</em> and{" "}
             <em className="text-cyan-300 not-italic">how</em> to migrate it to
             Solana successfully.
           </p>

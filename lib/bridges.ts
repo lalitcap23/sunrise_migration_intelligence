@@ -41,7 +41,7 @@ export type BridgeEntryEnriched = {
     // Cost estimate (static for CCIP/LZ, labelled "live" for Wormhole context)
     estimatedCostUsd: string;
     finalityMin: number;
-    // Wormhole-specific live fields (null for CCIP/LZ)
+    // Wormhole-specific live fields 
     wormhole: {
         availableNotionalUsd: number | null; // current 24h remaining capacity (USD)
         dailyLimitUsd: number | null;         // total 24h governor limit (USD)

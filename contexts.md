@@ -34,7 +34,7 @@ A “Migration Readiness Analyzer” solves that.
 
 # What the Analyzer Does
 
-The tool takes **any token from other chains** (ETH, BNB, Polygon, etc.) and outputs:
+The tool takes **any token from other chains** (ETH, bsc, Polygon, etc.) and outputs:
 
 ### 🔍 1) Market Demand Score
 
@@ -42,11 +42,11 @@ The tool takes **any token from other chains** (ETH, BNB, Polygon, etc.) and out
 – Number of active traders  
 – Volume concentration (how much activity from top wallets)
 
-👉 Helps judge if demand exists for Solana listing
+Helps judge if demand exists for Solana listing
 
 ---
 
-### 🧑‍🤝‍🧑 2) Holder Distribution
+###  2) Holder Distribution
 
 – How many holders  
 – What % is owned by top wallets  
@@ -66,7 +66,7 @@ The tool takes **any token from other chains** (ETH, BNB, Polygon, etc.) and out
 
 ---
 
-### 🔁 4) Cross-Chain Movement Risk
+### 4) Cross-Chain Movement Risk
 
 – Bridge risk assessment  
 – Compatible bridges (CCIP, Wormhole, LayerZero)  
