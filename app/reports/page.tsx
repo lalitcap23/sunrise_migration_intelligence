@@ -8,7 +8,7 @@ type SavedReport = {
   strategy: string; savedAt: string; gateway: string;
 };
 
-const CHAIN_ACCENT: Record<string,string> = { ethereum: "#60a5fa", bsc: "#fbbf24", polygon: "#c084fc" };
+const CHAIN_ACCENT: Record<string,string> = { ethereum: "#60a5fa", polygon: "#c084fc" };
 const SCORE_COLOR = (s: number) => s >= 70 ? "#4ade80" : s >= 40 ? "#fbbf24" : "#f87171";
 const SCORE_LABEL = (s: number) => s >= 70 ? "STRONG" : s >= 40 ? "MODERATE" : "WEAK";
 function trunc(s: string, a=8, b=6){ return s.length<=a+b ? s : `${s.slice(0,a)}…${s.slice(-b)}`; }

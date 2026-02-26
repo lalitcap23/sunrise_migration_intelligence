@@ -18,7 +18,6 @@ type TopToken = {
 
 const CHAINS = [
   { id: "ethereum", label: "Ethereum",  short: "ETH",  accent: "#60a5fa", glow: "rgba(96,165,250,0.15)", icon: "Ξ" },
-  { id: "bsc",      label: "BNB Chain", short: "BNB",  accent: "#fbbf24", glow: "rgba(251,191,36,0.12)",  icon: "⬡" },
   { id: "polygon",  label: "Polygon",   short: "MATIC", accent: "#c084fc", glow: "rgba(192,132,252,0.15)", icon: "⬡" },
 ];
 

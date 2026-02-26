@@ -18,7 +18,6 @@ interface CompareResult {
 
 const CHAINS = [
   { id: "ethereum", label: "Ethereum",  accent: "#60a5fa" },
-  { id: "bsc",      label: "BNB Chain",  accent: "#fbbf24" },
   { id: "polygon",  label: "Polygon",    accent: "#c084fc" },
 ];
 

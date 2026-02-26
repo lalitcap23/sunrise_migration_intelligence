@@ -101,7 +101,6 @@ interface AnalysisResult {
 
 const CHAINS = [
   { id: "ethereum", label: "Ethereum", icon: "Ξ" },
-  { id: "bsc", label: "BNB Chain", icon: "⬡" },
   { id: "polygon", label: "Polygon", icon: "⬡" },
 ] as const;
 
@@ -708,7 +707,7 @@ export default function AnalyzePage() {
                 >
                   <span className="text-base">{c.icon}</span>
                   <span className="hidden sm:inline">{c.label}</span>
-                  <span className="sm:hidden">{c.id === "bsc" ? "BNB" : c.label.slice(0, 3)}</span>
+                  <span className="sm:hidden">{c.label.slice(0, 3)}</span>
                 </button>
               );
             })}
