@@ -115,7 +115,7 @@ async function fetchWormholeChainData(chain: string): Promise<WormholeChainData>
     }
 }
 
-// ─── Main export ──────────────────────────────────────────────────────────────
+// Main export 
 
 export async function fetchBridgeData(chain: string): Promise<BridgesResult> {
     const wormholeData = await fetchWormholeChainData(chain);

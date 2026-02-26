@@ -36,9 +36,6 @@ export type { LiquiditySimResult };
  * Module 5: Migration Strategy  — Derived from modules 1–4 (live done)
  * Module 6: Overall Score       — Weighted average (live done)
  */
-
-// ─── Shared types ─────────────────────────────────────────────────────────────
-
 /**
  * Every scoring module returns this shape.
  * `breakdown` keys are label strings → displayed in the UI table.

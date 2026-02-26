@@ -1,7 +1,222 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
+
+// ─── Compatibility types (mirrors lib/compatibility.ts) ────────────────────────
+type FlagSeverity = "critical" | "warning" | "info";
+interface CompatibilityFlag {
+  id:           string;
+  label:        string;
+  severity:     FlagSeverity;
+  detected:     boolean;
+  description:  string;
+  bridgeImpact: string;
+}
+interface CompatibilityResult {
+  contractName:          string;
+  isVerified:            boolean;
+  isProxy:               boolean;
+  implementationAddress: string | null;
+  flags:                 CompatibilityFlag[];
+  overallCompatibility:  "compatible" | "caution" | "incompatible";
+  compatibilityScore:    number;
+  summary:               string;
+  bridgeRecommendation:  string;
+}
+
+// ─── Severity colours ──────────────────────────────────────────────────────────
+const SEV_COLOR: Record<FlagSeverity, string> = {
+  critical: "#ef4444",
+  warning:  "#eab308",
+  info:     "#71717a",
+};
+const SEV_BG: Record<FlagSeverity, string> = {
+  critical: "rgba(239,68,68,0.1)",
+  warning:  "rgba(234,179,8,0.1)",
+  info:     "rgba(113,113,122,0.1)",
+};
+const COMPAT_COLOR: Record<string, string> = {
+  compatible:   "#22c55e",
+  caution:      "#eab308",
+  incompatible: "#ef4444",
+};
+const COMPAT_BG: Record<string, string> = {
+  compatible:   "rgba(34,197,94,0.08)",
+  caution:      "rgba(234,179,8,0.08)",
+  incompatible: "rgba(239,68,68,0.08)",
+};
+const COMPAT_BORDER: Record<string, string> = {
+  compatible:   "rgba(34,197,94,0.25)",
+  caution:      "rgba(234,179,8,0.25)",
+  incompatible: "rgba(239,68,68,0.25)",
+};
+
+// ─── Compatibility Panel component ────────────────────────────────────────────
+function CompatibilityPanel({ token, chain }: { token: string; chain: string }) {
+  const [status,  setStatus]  = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [result,  setResult]  = useState<CompatibilityResult | null>(null);
+  const [errMsg,  setErrMsg]  = useState("");
+  const [open,    setOpen]    = useState(false);
+
+  useEffect(() => {
+    setStatus("loading");
+    fetch("/api/compatibility", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ token, chain }),
+    })
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) { setErrMsg(data.error || "Check failed"); setStatus("error"); return; }
+        setResult(data as CompatibilityResult);
+        setStatus("done");
+        // Auto-open if there are detected flags
+        if (data.flags?.some((f: CompatibilityFlag) => f.detected)) setOpen(true);
+      })
+      .catch(() => { setErrMsg("Network error"); setStatus("error"); });
+  }, [token, chain]);
+
+  const detectedFlags  = result?.flags.filter((f) => f.detected) ?? [];
+  const criticalCount  = detectedFlags.filter((f) => f.severity === "critical").length;
+  const warningCount   = detectedFlags.filter((f) => f.severity === "warning").length;
+
+  return (
+    <div style={{
+      background: result ? COMPAT_BG[result.overallCompatibility]  : "rgba(20,20,30,0.6)",
+      border:     `1px solid ${ result ? COMPAT_BORDER[result.overallCompatibility] : "#27272a" }`,
+      borderRadius: 16, overflow: "hidden", marginBottom: 24,
+    }}>
+      {/* Header row */}
+      <div
+        onClick={() => status === "done" && setOpen((o) => !o)}
+        style={{
+          display: "flex", alignItems: "center", gap: 12, padding: 20,
+          cursor: status === "done" ? "pointer" : "default",
+          userSelect: "none",
+        }}
+      >
+        <span style={{ fontSize: 20 }}>🔍</span>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 700, fontSize: 15, color: "#e5e5e5", display: "flex", alignItems: "center", gap: 10 }}>
+            Contract Safety Scan
+            {status === "loading" && (
+              <span style={{ fontSize: 11, color: "#52525b", fontWeight: 400 }}>scanning…</span>
+            )}
+            {status === "done" && result && (
+              <span style={{
+                fontSize: 11, padding: "2px 9px", borderRadius: 10, fontWeight: 700,
+                textTransform: "uppercase" as const, letterSpacing: "0.5px",
+                background: COMPAT_BG[result.overallCompatibility],
+                color:      COMPAT_COLOR[result.overallCompatibility],
+                border:     `1px solid ${COMPAT_BORDER[result.overallCompatibility]}`,
+              }}>
+                {result.overallCompatibility}
+              </span>
+            )}
+          </div>
+          {status === "done" && result && (
+            <div style={{ fontSize: 12, color: "#71717a", marginTop: 4 }}>
+              {result.contractName !== "Unknown" && <span style={{ color: "#a1a1aa" }}>{result.contractName} · </span>}
+              {result.isVerified ? "✓ Verified" : "⚠ Unverified"}
+              {result.isProxy && " · Proxy"}
+              {criticalCount > 0 && <span style={{ color: "#ef4444", marginLeft: 8 }}>· {criticalCount} critical</span>}
+              {warningCount  > 0 && <span style={{ color: "#eab308", marginLeft: 8 }}>· {warningCount} warning{warningCount > 1 ? "s" : ""}</span>}
+            </div>
+          )}
+          {status === "error" && (
+            <div style={{ fontSize: 12, color: "#f87171", marginTop: 4 }}>⚠ {errMsg}</div>
+          )}
+        </div>
+        {status === "done" && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {result && (
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: 22, fontWeight: 700, color: COMPAT_COLOR[result.overallCompatibility], lineHeight: 1 }}>
+                  {result.compatibilityScore}
+                </div>
+                <div style={{ fontSize: 10, color: "#52525b" }}>/ 100</div>
+              </div>
+            )}
+            <span style={{ color: "#52525b", fontSize: 12 }}>{open ? "▲" : "▼"}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Expanded details */}
+      {open && status === "done" && result && (
+        <div style={{ padding: "0 20px 20px", borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+          {/* Summary */}
+          <p style={{ fontSize: 13, color: "#a1a1aa", lineHeight: 1.6, margin: "16px 0 12px" }}>{result.summary}</p>
+
+          {/* Flags */}
+          <div style={{ display: "flex", flexDirection: "column" as const, gap: 8, marginBottom: 16 }}>
+            {result.flags.map((flag) => (
+              <div key={flag.id} style={{
+                display: "flex", gap: 12, padding: "10px 14px", borderRadius: 10,
+                background: flag.detected ? SEV_BG[flag.severity] : "rgba(255,255,255,0.02)",
+                border:     `1px solid ${flag.detected ? SEV_COLOR[flag.severity] + "40" : "transparent"}`,
+                opacity:    flag.detected ? 1 : 0.45,
+              }}>
+                <span style={{ fontSize: 16, flexShrink: 0 }}>
+                  {flag.detected
+                    ? flag.severity === "critical" ? "🔴"
+                      : flag.severity === "warning" ? "🟡" : "🔵"
+                    : "✅"}
+                </span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+                    <span style={{ fontWeight: 600, fontSize: 13, color: flag.detected ? SEV_COLOR[flag.severity] : "#52525b" }}>
+                      {flag.label}
+                    </span>
+                    {flag.detected && (
+                      <span style={{
+                        fontSize: 10, padding: "1px 7px", borderRadius: 8,
+                        background: SEV_BG[flag.severity],
+                        color: SEV_COLOR[flag.severity], fontWeight: 700,
+                        textTransform: "uppercase" as const,
+                      }}>
+                        {flag.severity}
+                      </span>
+                    )}
+                  </div>
+                  <p style={{ margin: 0, fontSize: 12, color: "#71717a", lineHeight: 1.5 }}>
+                    {flag.description}
+                  </p>
+                  {flag.detected && (
+                    <p style={{ margin: "6px 0 0", fontSize: 11, color: SEV_COLOR[flag.severity], opacity: 0.8, lineHeight: 1.5 }}>
+                      Bridge impact: {flag.bridgeImpact}
+                    </p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Recommendation */}
+          <div style={{
+            padding: "12px 16px", borderRadius: 10,
+            background: "rgba(139,92,246,0.07)",
+            border:     "1px solid rgba(139,92,246,0.2)",
+          }}>
+            <p style={{ margin: 0, fontSize: 11, color: "#71717a", textTransform: "uppercase" as const, letterSpacing: "0.5px", fontWeight: 600, marginBottom: 6 }}>
+              Bridge Recommendation
+            </p>
+            <p style={{ margin: 0, fontSize: 13, color: "#a1a1aa", lineHeight: 1.6 }}>
+              {result.bridgeRecommendation}
+            </p>
+          </div>
+
+          {result.isProxy && result.implementationAddress && (
+            <p style={{ margin: "12px 0 0", fontSize: 11, color: "#52525b" }}>
+              🔗 Implementation: <span style={{ fontFamily: "monospace", color: "#3f3f46" }}>{result.implementationAddress}</span>
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const CHAINS = [
   { id: "ethereum", label: "Ethereum" },
@@ -362,6 +577,8 @@ export default function AnalyzePage() {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<AnalysisResult | null>(null);
+  // Track the last analyzed token/chain so CompatibilityPanel can reload if re-run
+  const [analyzed, setAnalyzed] = useState<{ token: string; chain: string } | null>(null);
 
   async function handleRun() {
     if (!token.startsWith("0x") || token.length !== 42) {
@@ -388,6 +605,7 @@ export default function AnalyzePage() {
       }
 
       setResult(data);
+      setAnalyzed({ token, chain });
     } catch (err) {
       setError("Network error. Please check your connection and try again.");
     } finally {
@@ -400,6 +618,7 @@ export default function AnalyzePage() {
     setChain("ethereum");
     setError("");
     setResult(null);
+    setAnalyzed(null);
   }
 
   const formatNumber = (n: number) => {
@@ -416,18 +635,31 @@ export default function AnalyzePage() {
       padding: "40px 20px 80px",
     }}>
       <div style={{ maxWidth: 720, margin: "0 auto", fontFamily: "system-ui, -apple-system, sans-serif" }}>
-        {/* Back link */}
-        <Link href="/" style={{ 
-          fontSize: 13, 
-          color: "#8b5cf6", 
-          textDecoration: "none",
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 6,
-          transition: "color 0.2s",
-        }}>
-          ← Back to home
-        </Link>
+        {/* Nav row */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+          <Link href="/" style={{ 
+            fontSize: 13, 
+            color: "#8b5cf6", 
+            textDecoration: "none",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+          }}>
+            ← Back
+          </Link>
+          <Link href="/compare" style={{
+            fontSize: 13, fontWeight: 600,
+            color: "#b980ff",
+            textDecoration: "none",
+            display: "inline-flex", alignItems: "center", gap: 6,
+            padding: "6px 14px", borderRadius: 8,
+            border: "1px solid rgba(139,92,246,0.3)",
+            background: "rgba(139,92,246,0.08)",
+            transition: "all 0.2s",
+          }}>
+            ⚔️ Compare Tokens
+          </Link>
+        </div>
 
         <h1 style={{ 
           fontSize: 28, 
@@ -653,6 +885,11 @@ export default function AnalyzePage() {
               </p>
             </div>
 
+
+            {/* Contract Safety Scan — loads independently after main analysis */}
+            {analyzed && (
+              <CompatibilityPanel key={analyzed.token + analyzed.chain} token={analyzed.token} chain={analyzed.chain} />
+            )}
 
             {/* Module Breakdowns */}
             <div style={{ display: "grid", gap: 16 }}>
