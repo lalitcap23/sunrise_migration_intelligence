@@ -8,18 +8,8 @@
  *     - GET https://api.wormholescan.io/api/v1/governor/notional/limit
  *     Gives us: availableNotional, notionalLimit, maxTransactionSize (all USD)
  *     which lets us show real capacity %, congestion level, and max single-tx size.
- *
 
- * WHY STATIC FOR CCIP/LZ
- *  Their live APIs require project API keys or are not publicly accessible.
- *  Static cost/finality estimates are sourced from each protocol's public docs
- *  and are clearly labelled so users know they're estimates.
- *
- * NEVER THROWS:
- *  If the Wormhole API is unreachable, Wormhole falls back to "Unknown" capacity
- *  so the route always returns a complete response.
- */
-
+*/
 // ─── Wormhole chain IDs ───────────────────────────────────────────────────────
 // Source: https://docs.wormhole.com/wormhole/reference/constants
 
@@ -33,12 +23,10 @@ const WORMHOLE_CHAIN_ID: Record<string, number> = {
     polygon: 5,
 };
 
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 export type BridgeEntryEnriched = {
     name: string;
     supported: boolean;
-    // Cost estimate (static for CCIP/LZ, labelled "live" for Wormhole context)
     estimatedCostUsd: string;
     finalityMin: number;
     // Wormhole-specific live fields 
@@ -53,7 +41,7 @@ export type BridgeEntryEnriched = {
 };
 
 export type BridgesResult = {
-    chain: string;
+    chain: string
     bridges: BridgeEntryEnriched[];
     supportedBridgeCount: number;
     fastestBridgeName: string | null;
@@ -61,7 +49,6 @@ export type BridgesResult = {
     dataNote: string;
 };
 
-// ─── Wormhole API types ───────────────────────────────────────────────────────
 
 type WormholeNotionalAvailable = {
     data: Array<{ chainId: number; availableNotional: number }>;
@@ -75,7 +62,6 @@ type WormholeNotionalLimit = {
     }>;
 };
 
-// ─── Wormhole live data fetcher ───────────────────────────────────────────────
 
 const WORMHOLE_BASE = "https://api.wormholescan.io/api/v1";
 
@@ -129,70 +115,11 @@ async function fetchWormholeChainData(chain: string): Promise<WormholeChainData>
     }
 }
 
-// ─── Static bridge definitions ────────────────────────────────────────────────
-//
-// Cost ranges sourced from each protocol's public documentation:
-//  - Wormhole:   https://docs.wormhole.com
-//  - CCIP:       https://docs.chain.link/ccip/billing
-//  - LayerZero:  https://docs.layerzero.network
-//
-// CCIP does NOT support BSC→Solana. ETH and Polygon are supported.
-//
-
-type StaticBridge = {
-    name: string;
-    isCcip: boolean;
-    isLayerZero: boolean;
-    estimatedCostByChain: Record<string, string>;
-    finalityByChain: Record<string, number>;
-    supportedChains: string[];
-    dataSource: string;
-};
-
-const STATIC_BRIDGES: StaticBridge[] = [
-    {
-        name: "CCIP (Chainlink)",
-        isCcip: true,
-        isLayerZero: false,
-        estimatedCostByChain: {
-            ethereum: "$5–15",
-            bsc: "Not supported",
-            polygon: "$2–8",
-        },
-        finalityByChain: {
-            ethereum: 20,
-            bsc: 0,
-            polygon: 15,
-        },
-        supportedChains: ["ethereum", "polygon"], // BSC not supported for Solana route
-        dataSource: "Static — docs.chain.link/ccip",
-    },
-    {
-        name: "LayerZero",
-        isCcip: false,
-        isLayerZero: true,
-        estimatedCostByChain: {
-            ethereum: "$2–6",
-            bsc: "$1–3",
-            polygon: "$0.5–2",
-        },
-        finalityByChain: {
-            ethereum: 10,
-            bsc: 5,
-            polygon: 5,
-        },
-        supportedChains: ["ethereum", "bsc", "polygon"],
-        dataSource: "Static — docs.layerzero.network",
-    },
-];
-
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 export async function fetchBridgeData(chain: string): Promise<BridgesResult> {
-    // Fetch live Wormhole data and static bridges in parallel  
-    const [wormholeData] = await Promise.all([fetchWormholeChainData(chain)]);
+    const wormholeData = await fetchWormholeChainData(chain);
 
-    // ── 1. Wormhole entry (live data) ──────────────────────────────────────────
     const formatUsd = (n: number) =>
         n >= 1_000_000
             ? `$${(n / 1_000_000).toFixed(1)}M`
@@ -222,46 +149,20 @@ export async function fetchBridgeData(chain: string): Promise<BridgesResult> {
                 congestion: "Unknown",
             },
         dataSource: wormholeData
-            ? "Live — api.wormholescan.io (governor notional)"
+            ? "Live — api.wormholescan.io"
             : "Wormhole API unavailable — static fallback",
     };
 
-    // ── 2. Static bridges (CCIP + LayerZero) ───────────────────────────────────
-    const staticEntries: BridgeEntryEnriched[] = STATIC_BRIDGES.map((b) => {
-        const supported = b.supportedChains.includes(chain);
-        return {
-            name: b.name,
-            supported,
-            estimatedCostUsd: supported
-                ? b.estimatedCostByChain[chain] ?? "N/A"
-                : "Not supported",
-            finalityMin: supported ? b.finalityByChain[chain] ?? 0 : 0,
-            wormhole: null,
-            dataSource: b.dataSource,
-        };
-    });
-
-    const bridges: BridgeEntryEnriched[] = [wormholeEntry, ...staticEntries];
-    const supported = bridges.filter((b) => b.supported);
-
-    // Fastest by finality
-    const fastest = supported.reduce<BridgeEntryEnriched | null>(
-        (acc, b) =>
-            acc === null || b.finalityMin < (acc?.finalityMin ?? Infinity) ? b : acc,
-        null,
-    );
-
-    // Wormhole notional display for the data note
     const notionalNote = wormholeData
-        ? `Wormhole ${chain} governor: ${formatUsd(wormholeData.availableNotional)} available of ${formatUsd(wormholeData.dailyLimit)} daily limit (max tx: ${formatUsd(wormholeData.maxTxSize)}).`
+        ? `Wormhole ${chain}: ${formatUsd(wormholeData.availableNotional)} available of ${formatUsd(wormholeData.dailyLimit)} daily limit · max tx: ${formatUsd(wormholeData.maxTxSize)}.`
         : "Wormhole capacity data unavailable.";
 
     return {
         chain,
-        bridges,
-        supportedBridgeCount: supported.length,
-        fastestBridgeName: fastest?.name ?? null,
-        fastestFinalityMin: fastest?.finalityMin ?? null,
-        dataNote: `${notionalNote} CCIP and LayerZero costs are static estimates from protocol docs.`,
+        bridges: [wormholeEntry],
+        supportedBridgeCount: 1,
+        fastestBridgeName: "Wormhole",
+        fastestFinalityMin: WORMHOLE_FIN[chain] ?? 15,
+        dataNote: notionalNote,
     };
 }

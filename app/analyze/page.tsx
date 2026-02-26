@@ -28,6 +28,7 @@ interface AnalysisResult {
     marketPresence: number;
     liquidity: number;
     bridgeRisk: number;
+    dumpRisk: number;
     overall: number;
   };
   modules: {
@@ -87,12 +88,6 @@ interface AnalysisResult {
           targetLpUsd: number;
           rationale: string;
         };
-        migrationCost: {
-          bridgeFeeRange: string;
-          bridgeFeeUsd: number;
-          lpSeedUsd: number;
-          totalEstUsd: number;
-        };
       };
       poolData: {
         totalPoolTvlUsd: number;
@@ -105,7 +100,25 @@ interface AnalysisResult {
     bridgeRisk: {
       score: number;
       breakdown: Record<string, string | number>;
-      bridges: { name: string; supported: boolean }[];
+      bridges: {
+        name: string;
+        supported: boolean;
+        estimatedCost: string;
+        finalityMin: number;
+        dataSource: string;
+        wormhole: {
+          availableNotionalUsd: number | null;
+          dailyLimitUsd: number | null;
+          maxSingleTxUsd: number | null;
+          capacityPct: number | null;
+          congestion: "Low" | "Moderate" | "High" | "Unknown";
+        } | null;
+      }[];
+      dataNote: string;
+    };
+    dumpRisk: {
+      score: number;
+      breakdown: Record<string, string | number>;
     };
     strategy: { strategy: string; rationale: string };
     overall: number;
@@ -114,6 +127,8 @@ interface AnalysisResult {
     volumeHistory: { date: string; volumeUsd: number }[];
   };
 }
+
+
 
 function ScoreBar({ score, label }: { score: number; label: string }) {
   const color = score >= 70 ? "#22c55e" : score >= 40 ? "#eab308" : "#ef4444";
@@ -329,32 +344,6 @@ function LiquiditySimPanel({ sim }: { sim: SimData }) {
               </div>
             </div>
             <p style={{ margin: "12px 0 0", fontSize: 12, color: "#71717a", lineHeight: 1.5 }}>{sim.recommendation.rationale}</p>
-          </div>
-
-          {/* D. Migration cost breakdown */}
-          <div style={{
-            padding: 16,
-            background: "rgba(139,92,246,0.06)",
-            border: "1px solid rgba(139,92,246,0.2)",
-            borderRadius: 12,
-          }}>
-            <p style={{ margin: "0 0 12px", fontSize: 12, color: "#71717a", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 600 }}>Migration Cost Estimate</p>
-            <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
-              <tbody>
-                <tr style={{ borderBottom: "1px solid #1f1f27" }}>
-                  <td style={{ padding: "10px 0", color: "#a1a1aa" }}>Bridge Fees (one-way)</td>
-                  <td style={{ padding: "10px 0", textAlign: "right", fontWeight: 600, color: "#e5e5e5" }}>{sim.migrationCost.bridgeFeeRange}</td>
-                </tr>
-                <tr style={{ borderBottom: "1px solid #1f1f27" }}>
-                  <td style={{ padding: "10px 0", color: "#a1a1aa" }}>Recommended LP Seed</td>
-                  <td style={{ padding: "10px 0", textAlign: "right", fontWeight: 600, color: "#e5e5e5" }}>{fmtUsd(sim.migrationCost.lpSeedUsd)}</td>
-                </tr>
-                <tr>
-                  <td style={{ padding: "12px 0 0", color: "#ffffff", fontWeight: 700 }}>Total Estimated Cost</td>
-                  <td style={{ padding: "12px 0 0", textAlign: "right", fontWeight: 700, fontSize: 16, color: "#8b5cf6" }}>{fmtUsd(sim.migrationCost.totalEstUsd)}</td>
-                </tr>
-              </tbody>
-            </table>
           </div>
         </>
       )}
@@ -633,6 +622,19 @@ export default function AnalyzePage() {
               <ScoreBar score={result.scores.marketPresence} label="Market Presence" />
               <ScoreBar score={result.scores.liquidity} label="Liquidity" />
               <ScoreBar score={result.scores.bridgeRisk} label="Bridge Risk" />
+              <div style={{ marginTop: 4 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                  <span style={{ fontSize: 14, color: "#e5e5e5" }}>Dump Risk</span>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: result.scores.dumpRisk >= 70 ? "#ef4444" : result.scores.dumpRisk >= 50 ? "#f97316" : result.scores.dumpRisk >= 30 ? "#eab308" : "#22c55e" }}>
+                    {result.scores.dumpRisk}/100
+                  </span>
+                </div>
+                <div style={{ height: 10, borderRadius: 5, background: "#1f1f23", overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${result.scores.dumpRisk}%`, borderRadius: 5, transition: "width 0.5s ease",
+                    background: result.scores.dumpRisk >= 70 ? "#ef4444" : result.scores.dumpRisk >= 50 ? "#f97316" : result.scores.dumpRisk >= 30 ? "#eab308" : "#22c55e",
+                  }} />
+                </div>
+              </div>
             </div>
 
             {/* Strategy Recommendation */}
@@ -650,6 +652,7 @@ export default function AnalyzePage() {
                 {result.modules.strategy.rationale}
               </p>
             </div>
+
 
             {/* Module Breakdowns */}
             <div style={{ display: "grid", gap: 16 }}>
@@ -818,22 +821,104 @@ export default function AnalyzePage() {
                   {result.modules.bridgeRisk.bridges.length > 0 && (
                     <div style={{ marginTop: 16, display: "flex", flexWrap: "wrap", gap: 8 }}>
                       {result.modules.bridgeRisk.bridges.map((bridge, i) => (
-                        <span
+                        <div
                           key={i}
                           style={{
-                            fontSize: 12,
-                            padding: "6px 14px",
-                            borderRadius: 20,
-                            background: bridge.supported ? "rgba(34, 197, 94, 0.15)" : "rgba(239, 68, 68, 0.15)",
-                            color: bridge.supported ? "#22c55e" : "#ef4444",
-                            border: `1px solid ${bridge.supported ? "rgba(34, 197, 94, 0.3)" : "rgba(239, 68, 68, 0.3)"}`,
+                            padding: "10px 14px",
+                            borderRadius: 12,
+                            background: bridge.supported ? "rgba(34,197,94,0.08)" : "rgba(239,68,68,0.08)",
+                            border: `1px solid ${bridge.supported ? "rgba(34,197,94,0.25)" : "rgba(239,68,68,0.25)"}`,
+                            minWidth: 160,
+                            flex: "1 1 160px",
                           }}
                         >
-                          {bridge.name}: {bridge.supported ? "✓" : "✗"}
-                        </span>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: bridge.supported ? "#22c55e" : "#ef4444" }}>
+                              {bridge.supported ? "✓" : "✗"} {bridge.name}
+                            </span>
+                            {bridge.wormhole?.congestion && (
+                              <span style={{
+                                fontSize: 10, padding: "2px 7px", borderRadius: 10, fontWeight: 600,
+                                background: bridge.wormhole.congestion === "Low" ? "rgba(34,197,94,0.2)" : bridge.wormhole.congestion === "High" ? "rgba(239,68,68,0.2)" : "rgba(234,179,8,0.2)",
+                                color: bridge.wormhole.congestion === "Low" ? "#22c55e" : bridge.wormhole.congestion === "High" ? "#ef4444" : "#eab308",
+                              }}>
+                                {bridge.wormhole.congestion}
+                              </span>
+                            )}
+                          </div>
+                          {bridge.supported && (
+                            <>
+                              <div style={{ fontSize: 11, color: "#71717a" }}>Est. cost: <span style={{ color: "#a1a1aa" }}>{bridge.estimatedCost}</span></div>
+                              <div style={{ fontSize: 11, color: "#71717a" }}>Finality: <span style={{ color: "#a1a1aa" }}>{bridge.finalityMin} min</span></div>
+                              {bridge.wormhole?.maxSingleTxUsd && (
+                                <div style={{ fontSize: 11, color: "#71717a" }}>Max tx: <span style={{ color: "#a1a1aa" }}>
+                                  {bridge.wormhole.maxSingleTxUsd >= 1_000_000
+                                    ? `$${(bridge.wormhole.maxSingleTxUsd / 1_000_000).toFixed(1)}M`
+                                    : `$${(bridge.wormhole.maxSingleTxUsd / 1_000).toFixed(0)}K`}
+                                </span></div>
+                              )}
+                            </>
+                          )}
+                          <div style={{ fontSize: 10, color: "#3f3f46", marginTop: 6 }}>{bridge.dataSource}</div>
+                        </div>
                       ))}
                     </div>
                   )}
+                </div>
+              </details>
+
+              {/* Dump Risk */}
+              <details style={{
+                background: "rgba(24, 24, 27, 0.8)",
+                border: result.modules.dumpRisk.score >= 70
+                  ? "1px solid rgba(239,68,68,0.35)"
+                  : result.modules.dumpRisk.score >= 50
+                  ? "1px solid rgba(249,115,22,0.35)"
+                  : "1px solid #27272a",
+                borderRadius: 16,
+                overflow: "hidden",
+              }}>
+                <summary style={{
+                  cursor: "pointer",
+                  fontSize: 15,
+                  fontWeight: 600,
+                  color: "#e5e5e5",
+                  padding: 20,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  listStyle: "none",
+                }}>
+                  <span>⚠ Dump Risk Analysis</span>
+                  <span style={{
+                    background: result.modules.dumpRisk.score >= 70
+                      ? "rgba(239,68,68,0.2)"
+                      : result.modules.dumpRisk.score >= 50
+                      ? "rgba(249,115,22,0.2)"
+                      : result.modules.dumpRisk.score >= 30
+                      ? "rgba(234,179,8,0.2)"
+                      : "rgba(34,197,94,0.2)",
+                    color: result.modules.dumpRisk.score >= 70
+                      ? "#ef4444"
+                      : result.modules.dumpRisk.score >= 50
+                      ? "#f97316"
+                      : result.modules.dumpRisk.score >= 30
+                      ? "#eab308"
+                      : "#22c55e",
+                    padding: "4px 12px",
+                    borderRadius: 20,
+                    fontSize: 13,
+                    fontWeight: 600,
+                  }}>
+                    {result.modules.dumpRisk.score}/100
+                  </span>
+                </summary>
+                <div style={{ padding: "0 20px 20px" }}>
+                  <p style={{ fontSize: 12, color: "#71717a", margin: "0 0 16px", lineHeight: 1.5 }}>
+                    Higher score = higher dump risk. Signals whale concentration,
+                    supply unlock pressure, and speculative momentum.
+                  </p>
+                  <BreakdownTable breakdown={result.modules.dumpRisk.breakdown} />
                 </div>
               </details>
             </div>

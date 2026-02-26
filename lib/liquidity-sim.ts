@@ -36,10 +36,6 @@
  *  ├──────────────────────────────┼──────────────────────────────────────────┤
  *  │ recommendation.minLpUsd      │ Minimum LP seed for <1% slip on $10K    │
  *  │ recommendation.targetLpUsd   │ Target LP seed for <1% slip on $100K    │
- *  ├──────────────────────────────┼──────────────────────────────────────────┤
- *  │ migrationCost.bridgeFeeRange │ String range from bridge data            │
- *  │ migrationCost.lpSeedUsd      │ = recommendation.targetLpUsd            │
- *  │ migrationCost.totalEstUsd    │ midpoint bridge cost + LP seed           │
  *  └──────────────────────────────┴──────────────────────────────────────────┘
  *
  * ── SEEDED TVL ASSUMPTION ───────────────────────────────────────────────────
@@ -52,8 +48,8 @@
 /** A single slippage estimate at a given trade size. */
 export type SlippageTier = {
     tradeSizeUsd: number;
-    label: string;                                           // "$10K"
-    slippagePct: number | null;                              // null if TVL = 0
+    label: string;                                           
+    slippagePct: number | null;                              
     riskLevel: "Low" | "Moderate" | "High" | "Very High" | "N/A";
 };
 
@@ -64,21 +60,13 @@ export type LpRecommendation = {
     rationale: string;
 };
 
-/** All-in migration cost breakdown. */
-export type MigrationCostEstimate = {
-    bridgeFeeRange: string;     // e.g. "~$3–8"
-    bridgeFeeUsd: number;       // midpoint of the range
-    lpSeedUsd: number;          // = recommendation.targetLpUsd
-    totalEstUsd: number;        // bridgeFeeUsd + lpSeedUsd
-};
-
 /** Output for one chain's liquidity projection (current source or Solana). */
 export type ChainLiquidityProjection = {
-    label: string;              // "Current (Ethereum)" or "Solana (Post-Migration)"
-    tvlUsd: number;             // TVL this simulation is based on
+    label: string;
+    tvlUsd: number;
     slippageTiers: SlippageTier[];
-    depth1PctUsd: number;       // trade size that causes ~1% price impact
-    depth5PctUsd: number;       // trade size that causes ~5% price impact
+    depth1PctUsd: number;
+    depth5PctUsd: number;
 };
 
 /** Full simulation result returned from `runLiquiditySim()`. */
@@ -87,7 +75,6 @@ export type LiquiditySimResult = {
     solana: ChainLiquidityProjection;
     seededTvlUsd: number;
     recommendation: LpRecommendation;
-    migrationCost: MigrationCostEstimate;
     hasTvlData: boolean;
     note: string;
 };
@@ -109,20 +96,6 @@ const SOLANA_TVL_FRACTION = 0.10;
 const SOLANA_TVL_FLOOR_USD = 10_000;    // even tiny tokens need a floor
 const SOLANA_TVL_CAP_USD = 50_000_000; // cap to prevent "infinite depth" illusions
 
-// Bridge fee midpoints (USD) for cost estimate. These map to the static
-// costs already in bridges.ts — we duplicate the midpoints here to keep
-// liquidity-sim.ts self-contained (no circular deps).
-const BRIDGE_MIDPOINTS: Record<string, number> = {
-    ethereum: 9,   // midpoint of $3–8 + $5–15 average
-    bsc: 3,   // midpoint of $1–4
-    polygon: 2,   // midpoint of $0.5–2
-};
-
-const BRIDGE_RANGES: Record<string, string> = {
-    ethereum: "~$3–15",
-    bsc: "~$1–4",
-    polygon: "~$0.5–8",
-};
 
 
 /**
@@ -247,19 +220,9 @@ export function runLiquiditySim(
     const targetLpUsd = lpNeededForSlippage(100_000, 1);   // = $5M
     const recommendation = buildRecommendation(minLpUsd, targetLpUsd);
 
-    // ── Migration cost estimate ───────────────────────────────────────────────
-    const bridgeFeeUsd = BRIDGE_MIDPOINTS[chain] ?? 5;
-    const bridgeRange = BRIDGE_RANGES[chain] ?? "~$2–15";
-    const migrationCost: MigrationCostEstimate = {
-        bridgeFeeRange: bridgeRange,
-        bridgeFeeUsd,
-        lpSeedUsd: recommendation.targetLpUsd,
-        totalEstUsd: bridgeFeeUsd + recommendation.targetLpUsd,
-    };
-
     const note = hasTvlData
         ? `Solana pool modeled at 10% of current ${chain} TVL ($${(seededTvlUsd / 1_000).toFixed(0)}K). ` +
-        `CPMM constant-product formula (x·y=k). Lower-bound estimate — real slippage may be higher.`
+        `CPMM x·y=k formula. Lower-bound estimate — real slippage may be higher.`
         : "No DeFiLlama TVL found. Slippage estimates unavailable — enter a token with active DEX pools.";
 
     return {
@@ -267,14 +230,12 @@ export function runLiquiditySim(
         solana,
         seededTvlUsd,
         recommendation,
-        migrationCost,
         hasTvlData,
         note,
     };
 }
 
 
-/** Format a USD number compactly: $1.2M, $450K, $1,200 */
 export function fmtUsd(n: number): string {
     if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(2)}B`;
     if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
@@ -282,13 +243,13 @@ export function fmtUsd(n: number): string {
     return `$${n.toFixed(0)}`;
 }
 
-/** Map a risk level string to a color hex for use in inline styles. */
+
 export function riskColor(level: SlippageTier["riskLevel"]): string {
     switch (level) {
-        case "Low": return "#22c55e"; // green
-        case "Moderate": return "#84cc16"; // lime
-        case "High": return "#eab308"; // yellow
-        case "Very High": return "#ef4444"; // red
-        default: return "#71717a"; // gray
+        case "Low": return "#22c55e";
+        case "Moderate": return "#84cc16";
+        case "High": return "#eab308";
+        case "Very High": return "#ef4444";
+        default: return "#71717a";
     }
 }

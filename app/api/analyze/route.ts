@@ -5,8 +5,6 @@
  *  3. Pass raw numbers into the scoring engine (lib/scoring.ts)
  *  4. Return a clean, structured JSON response
  *
- * It contains ZERO scoring logic. All scoring lives in lib/scoring.ts.
- * This separation means you can test scoring independently with mock data.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -14,22 +12,23 @@ import Coingecko from "@coingecko/coingecko-typescript";
 import { geckoClient, PLATFORM_MAP } from "@/lib/coingecko";
 import { fetchHolderData } from "@/lib/holders";
 import { fetchLiquidityData } from "@/lib/liquidity";
+import { fetchBridgeData } from "@/lib/bridges";
+
 import {
   calcDemandScore,
   calcMarketPresenceScore,
   calcLiquidityScore,
-  calcBridgeScore,
+  calcDumpRiskScore,
   recommendStrategy,
   calcOverallScore,
+  clamp,
 } from "@/lib/scoring";
 
-// ─── Request validation ───────────────────────────────────────────────────────
 
 function isValidAddress(addr: string): boolean {
   return typeof addr === "string" && addr.startsWith("0x") && addr.length === 42;
 }
 
-// ─── POST handler ─────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
   // 1. Parse body
@@ -55,30 +54,18 @@ export async function POST(req: NextRequest) {
 
   try {
     // ── Fetch all external data IN PARALLEL ──────────────────────────────────
-    //   4 sources fire simultaneously — no serial waiting.
-    //   CoinGecko (2 calls) + Etherscan + DeFiLlama all run at the same time.
-    //   DeFiLlama yields/pools is cached 1hr server-side → fast after first hit.
-    const [coinData, chartData, holderData, liquidityData] = await Promise.all([
-      // CoinGecko: full coin metadata + market data by contract address
+    const [coinData, chartData, holderData, liquidityData, bridgeData] = await Promise.all([
       geckoClient.coins.contract.get(token, { id: platformId }),
-
-      // CoinGecko: 30-day market chart (volume + price history for charts)
       geckoClient.coins.contract.marketChart.get(token, {
         id: platformId,
         vs_currency: "usd",
         days: "30",
       }),
-
-      // Etherscan V2: real holder concentration (never throws — safe fallback)
       fetchHolderData(token, chain),
-
-      // DeFiLlama: real pool TVL + price confidence (never throws — safe fallback)
       fetchLiquidityData(token, chain),
+      fetchBridgeData(chain),
     ]);
 
-    // ── Step 3: Extract raw fields from CoinGecko response ───────────────────
-    //   We cast to Record<string, number> because the SDK types these as
-    //   unknown currency maps (e.g. { usd: 74000000000, btc: 1200 }).
     const md = coinData.market_data ?? {};
     const cd = coinData.community_data ?? {};
 
@@ -97,8 +84,7 @@ export async function POST(req: NextRequest) {
     const watchlistUsers = coinData.watchlist_portfolio_users ?? 0;
     const tickerCount = (coinData.tickers ?? []).length;
 
-    // ── Step 4: Run scoring engine ────────────────────────────────────────────
-    //   All logic lives in lib/scoring.ts. Route only wires inputs → outputs.
+    // ── Step 4: Run scoring engine
 
     const demandResult = calcDemandScore({
       volume24h,
@@ -108,8 +94,6 @@ export async function POST(req: NextRequest) {
       priceChange30d,
     });
 
-    // Use real Etherscan holder data — holderData.supported=false means BSC
-    // without a BscScan key, so the scoring function uses neutral defaults.
     const marketPresenceResult = calcMarketPresenceScore({
       uniqueRecipients: holderData.uniqueRecipients,
       top10TransferPct: holderData.top10TransferPct,
@@ -118,7 +102,6 @@ export async function POST(req: NextRequest) {
       watchlistUsers,
     });
 
-    // Real TVL from DeFiLlama as primary; CoinGecko signals as secondary/fallback
     const liquidityResult = calcLiquidityScore({
       totalPoolTvlUsd: liquidityData.totalPoolTvlUsd,
       poolCount: liquidityData.poolCount,
@@ -132,13 +115,41 @@ export async function POST(req: NextRequest) {
       chain,
     });
 
-    const bridgeResult = calcBridgeScore(chain);
+    const bridgeScore = clamp(30 + bridgeData.supportedBridgeCount * 20);
+    const bridgeBreakdown: Record<string, string | number> = {
+      "Source Chain": chain,
+      "Bridges Available": bridgeData.supportedBridgeCount,
+      "Fastest Bridge": bridgeData.fastestBridgeName ?? "None",
+      "Fastest Finality (min)": bridgeData.fastestFinalityMin ?? 0,
+    };
+    // Append live Wormhole stats if available
+    const wh = bridgeData.bridges.find((b) => b.name === "Wormhole")?.wormhole;
+    if (wh && wh.capacityPct !== null) {
+      const fmtCap = (n: number) =>
+        n >= 1_000_000 ? `$${(n / 1_000_000).toFixed(1)}M` : `$${(n / 1_000).toFixed(0)}K`;
+      bridgeBreakdown["Wormhole Congestion"] = wh.congestion;
+      bridgeBreakdown["Wormhole Capacity Used"] = `${100 - wh.capacityPct}%`;
+      bridgeBreakdown["Wormhole Available (24h)"] = fmtCap(wh.availableNotionalUsd ?? 0);
+      bridgeBreakdown["Wormhole Max Single Tx"] = fmtCap(wh.maxSingleTxUsd ?? 0);
+    }
+
+    const dumpRiskResult = calcDumpRiskScore({
+      top10TransferPct: holderData.top10TransferPct,
+      holderDataAvailable: holderData.supported && holderData.uniqueRecipients > 0,
+      circulatingSupply,
+      totalSupply,
+      priceChange7d,
+      priceChange30d,
+      volume24h,
+      marketCap,
+    });
 
     const allScores = {
       demand: demandResult.score,
       marketPresence: marketPresenceResult.score,
       liquidity: liquidityResult.score,
-      bridgeRisk: bridgeResult.score,
+      bridgeRisk: bridgeScore,
+      dumpRisk: dumpRiskResult.score,
     };
 
     const strategyResult = recommendStrategy(allScores);
@@ -150,7 +161,6 @@ export async function POST(req: NextRequest) {
       volumeUsd: Math.round(entry[1] ?? 0),
     }));
 
-    // ── Step 6: Return structured response ────────────────────────────────────
     return NextResponse.json({
       // Token identity
       token: {
@@ -172,7 +182,8 @@ export async function POST(req: NextRequest) {
         demand: demandResult.score,
         marketPresence: marketPresenceResult.score,
         liquidity: liquidityResult.score,
-        bridgeRisk: bridgeResult.score,
+        bridgeRisk: bridgeScore,
+        dumpRisk: dumpRiskResult.score,
         overall: overallScore,
       },
 
@@ -213,9 +224,21 @@ export async function POST(req: NextRequest) {
           },
         },
         bridgeRisk: {
-          score: bridgeResult.score,
-          breakdown: bridgeResult.breakdown,
-          bridges: bridgeResult.bridges,
+          score: bridgeScore,
+          breakdown: bridgeBreakdown,
+          bridges: bridgeData.bridges.map((b) => ({
+            name: b.name,
+            supported: b.supported,
+            estimatedCost: b.estimatedCostUsd,
+            finalityMin: b.finalityMin,
+            dataSource: b.dataSource,
+            wormhole: b.wormhole,
+          })),
+          dataNote: bridgeData.dataNote,
+        },
+        dumpRisk: {
+          score: dumpRiskResult.score,
+          breakdown: dumpRiskResult.breakdown,
         },
         strategy: strategyResult,
         overall: overallScore,
@@ -226,6 +249,7 @@ export async function POST(req: NextRequest) {
         volumeHistory: volumeHistory.slice(-30),
       },
     });
+
 
   } catch (err) {
     // Specific CoinGecko SDK error types (from contextg.md rules)

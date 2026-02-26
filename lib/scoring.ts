@@ -69,13 +69,6 @@ export type LiquidityScoreResult = ScoreResult & {
   sim: LiquiditySimResult;          // Solana post-migration CPMM simulation
 };
 
-/** One bridge entry returned in the Bridge Risk module. */
-export type BridgeEntry = {
-  name: string;
-  supported: boolean;
-  estimatedCost: string; // e.g. "$2–6" — static for now, live quotes later
-  finalityMin: number;  // estimated finality in minutes
-};
 
 /** Combined scores object passed between functions. */
 export type AllScores = {
@@ -83,11 +76,23 @@ export type AllScores = {
   marketPresence: number;
   liquidity: number;
   bridgeRisk: number;
+  dumpRisk: number;
 };
 
 export type StrategyResult = {
   strategy: string;
   rationale: string;
+};
+
+export type DumpRiskInput = {
+  top10TransferPct: number;
+  holderDataAvailable: boolean;
+  circulatingSupply: number;
+  totalSupply: number;
+  priceChange7d: number;
+  priceChange30d: number;
+  volume24h: number;
+  marketCap: number;
 };
 
 // ─── Official score weights ───────────────────────────────────────────────────
@@ -433,60 +438,71 @@ export function calcLiquidityScore(data: LiquidityInput): LiquidityScoreResult {
   };
 }
 
-// ─── Module 4: Bridge Risk Score ─────────────────────────────────────────────
+
+// ─── Module 4b: Dump Risk Score ──────────────────────────────────────────────
 //
-// DATA SOURCE: Static hardcode (current)
+// Measures the probability that large holders will sell/dump the token shortly
+// after migration, destabilizing the new Solana listing.
 //
-// FUTURE DATA SOURCES:
-//  - Wormhole SDK / REST API  → https://wormhole.com/docs
-//    `GET /v1/governor/available_notional_by_chain` — real capacity per chain
-//  - LayerZero Scan API       → https://layerzeroscan.com/api/explorer
-//    Returns real transfer cost quotes per route
-//  - CCIP (Chainlink)         → https://docs.chain.link/ccip
-//    Supports: Ethereum, Polygon, Avalanche, BSC, Arbitrum, Optimism, Base
-//    Does NOT support BSC↔Solana natively yet.
+// Sub-scores (100 pts total):
+//  ┌──────────────────────────┬────────┬─────────────────────────────────────────┐
+//  │ Whale concentration      │  35    │ INVERSE: 35 − top10Pct*0.35             │
+//  │ Supply unlock risk       │  25    │ circ/total ratio → higher = safer       │
+//  │ Price momentum (bearish) │  25    │ INVERSE: negative trend → higher risk   │
+//  │ Vol/MCap churn           │  15    │ INVERSE: very high ratio = speculative  │
+//  └──────────────────────────┴────────┴─────────────────────────────────────────┘
 //
-// SCORING LOGIC:
-//  Bridge score = 30 (baseline) + 20 per supported bridge.
-//  More bridge options = more routes = lower migration risk.
-//  High score (90) means 3 bridges available; low (50) means 1.
+// NOTE: Higher dump risk score = HIGHER danger. 0 = safe, 100 = extreme risk.
 //
 
-export function calcBridgeScore(chain: string): ScoreResult & { bridges: BridgeEntry[] } {
-  const BRIDGE_DATA: Record<string, BridgeEntry[]> = {
-    ethereum: [
-      { name: "Wormhole", supported: true, estimatedCost: "$3-8", finalityMin: 15 },
-      { name: "CCIP (Chainlink)", supported: true, estimatedCost: "$5-15", finalityMin: 20 },
-      { name: "LayerZero", supported: true, estimatedCost: "$2-6", finalityMin: 10 },
-    ],
-    bsc: [
-      { name: "Wormhole", supported: true, estimatedCost: "$1-4", finalityMin: 5 },
-      { name: "CCIP (Chainlink)", supported: false, estimatedCost: "N/A", finalityMin: 0 },
-      { name: "LayerZero", supported: true, estimatedCost: "$1-3", finalityMin: 5 },
-    ],
-    polygon: [
-      { name: "Wormhole", supported: true, estimatedCost: "$0.5-2", finalityMin: 5 },
-      { name: "CCIP (Chainlink)", supported: true, estimatedCost: "$2-8", finalityMin: 15 },
-      { name: "LayerZero", supported: true, estimatedCost: "$0.5-2", finalityMin: 5 },
-    ],
-  };
+export function calcDumpRiskScore(data: DumpRiskInput): ScoreResult {
+  // Sub-score A: Whale concentration risk (35 pts max)
+  // High top-10 pct means a few wallets could dump and crater the price.
+  const whaleRisk = data.holderDataAvailable
+    ? clamp(data.top10TransferPct * 0.35, 0, 35)
+    : 17; // neutral fallback
 
-  const bridges: BridgeEntry[] = BRIDGE_DATA[chain] ?? BRIDGE_DATA["ethereum"];
-  const supported = bridges.filter((b) => b.supported);
-  const fastestFinality =
-    supported.length > 0
-      ? Math.min(...supported.map((b) => b.finalityMin))
-      : 0;
+  // Sub-score B: Supply unlock risk (25 pts max)
+  // Low circ/total ratio means a large locked supply can unlock post-migration.
+  const supplyRatio =
+    data.totalSupply > 0 ? data.circulatingSupply / data.totalSupply : 1;
+  const supplyRisk = clamp((1 - supplyRatio) * 25, 0, 25);
+
+  // Sub-score C: Price momentum risk (25 pts max)
+  // Bearish 7d + 30d trend signals existing sell pressure.
+  const momentumRisk = clamp(
+    12.5 + (-data.priceChange7d * 0.3 + -data.priceChange30d * 0.2),
+    0,
+    25,
+  );
+
+  // Sub-score D: High-churn speculation risk (15 pts max)
+  // Vol/MCap > 20% daily indicates hot-money speculation, not organic demand.
+  const volMcapRatio =
+    data.marketCap > 0 ? (data.volume24h / data.marketCap) * 100 : 0;
+  const churnRisk = clamp(volMcapRatio * 0.5, 0, 15);
+
+  const totalRisk = clamp(whaleRisk + supplyRisk + momentumRisk + churnRisk);
+
+  const riskLabel =
+    totalRisk >= 70 ? "🔴 Extreme"
+      : totalRisk >= 50 ? "🟠 High"
+        : totalRisk >= 30 ? "🟡 Moderate"
+          : "🟢 Low";
+
+  const supplyPct = (supplyRatio * 100).toFixed(1);
 
   return {
-    score: clamp(30 + supported.length * 20),
-    bridges,
+    score: totalRisk,
     breakdown: {
-      "Source Chain": chain,
-      "Bridges Available": supported.length,
-      "Fastest Bridge": supported[0]?.name ?? "None",
-      "Fastest Finality (min)": fastestFinality,
-      "Data Note": "Static — live quotes TODO (Wormhole/LZ API)",
+      "Risk Level": riskLabel,
+      "Whale Concentration Risk": data.holderDataAvailable
+        ? `${data.top10TransferPct.toFixed(1)}% to top-10 wallets`
+        : "N/A (data unavailable)",
+      "Circulating / Total Supply": `${supplyPct}%`,
+      "7d Price Momentum": `${data.priceChange7d.toFixed(2)}%`,
+      "30d Price Momentum": `${data.priceChange30d.toFixed(2)}%`,
+      "Vol / MCap (daily churn)": `${volMcapRatio.toFixed(2)}%`,
     },
   };
 }
@@ -510,7 +526,7 @@ export function recommendStrategy(scores: AllScores): StrategyResult {
     scores.liquidity * SCORE_WEIGHTS.liquidity +
     scores.bridgeRisk * SCORE_WEIGHTS.bridgeRisk;
 
-  if (avg >= 70) {
+  if (avg >= 70 && scores.dumpRisk < 50) {
     return {
       strategy: "Canonical Token Launch",
       rationale:
@@ -532,6 +548,14 @@ export function recommendStrategy(scores: AllScores): StrategyResult {
       rationale:
         "Liquidity on the source chain is thin. " +
         "Use a Liquidity Bootstrapping Pool on Fjord or Meteora to establish fair price discovery before launch.",
+    };
+  }
+  if (scores.dumpRisk >= 70) {
+    return {
+      strategy: "Wrapped Token",
+      rationale:
+        "Dump risk is extreme — whale concentration or bearish momentum signals major sell pressure post-migration. " +
+        "Use a wrapped token while working on community distribution.",
     };
   }
   return {
@@ -556,3 +580,4 @@ export function calcOverallScore(scores: AllScores): number {
     scores.bridgeRisk * SCORE_WEIGHTS.bridgeRisk,
   );
 }
+
