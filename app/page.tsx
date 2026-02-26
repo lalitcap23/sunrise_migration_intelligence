@@ -114,6 +114,9 @@ export default function Home() {
           <a href="#about" className="hover:text-white transition-colors">
             About
           </a>
+          <Link href="/tokens" className="hover:text-white transition-colors text-violet-400 font-medium">
+            Top Tokens
+          </Link>
         </div>
         <Link
           href="/analyze"

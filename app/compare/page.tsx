@@ -187,7 +187,6 @@ export default function ComparePage() {
   const doneResults    = results.filter((r) => r.status === "done");
   const ranked         = [...doneResults].sort((a, b) => (b.scores?.overall ?? 0) - (a.scores?.overall ?? 0));
 
-  // ─── Render ─────────────────────────────────────────────────────────────────
   return (
     <div style={{
       minHeight:   "100vh",

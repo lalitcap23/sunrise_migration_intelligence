@@ -1064,8 +1064,16 @@ export default function AnalyzePage() {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<AnalysisResult | null>(null);
-  // Track the last analyzed token/chain so CompatibilityPanel can reload if re-run
   const [analyzed, setAnalyzed] = useState<{ token: string; chain: string } | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const t = params.get("token");
+    const c = params.get("chain");
+    if (t) setToken(t);
+    if (c) setChain(c);
+  }, []);
 
   async function handleRun() {
     if (!token.startsWith("0x") || token.length !== 42) {
