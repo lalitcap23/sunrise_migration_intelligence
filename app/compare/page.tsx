@@ -197,12 +197,36 @@ export default function ComparePage() {
     }}>
       <div style={{ maxWidth: 1100, margin: "0 auto" }}>
 
-        {/* Back */}
-        <Link href="/" style={{ fontSize: 13, color: "#8b5cf6", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>
-          ← Back to home
-        </Link>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <Link href="/" style={{ fontSize: 13, color: "#8b5cf6", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>
+            ← Back
+          </Link>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Link href="/tokens" style={{
+              fontSize: 13, fontWeight: 600,
+              color: "#22d3ee",
+              textDecoration: "none",
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "6px 14px", borderRadius: 8,
+              border: "1px solid rgba(34,211,238,0.3)",
+              background: "rgba(34,211,238,0.07)",
+            }}>
+              🏆 Top Tokens
+            </Link>
+            <Link href="/analyze" style={{
+              fontSize: 13, fontWeight: 600,
+              color: "#b980ff",
+              textDecoration: "none",
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "6px 14px", borderRadius: 8,
+              border: "1px solid rgba(139,92,246,0.3)",
+              background: "rgba(139,92,246,0.08)",
+            }}>
+              🔍 Analyze Token
+            </Link>
+          </div>
+        </div>
 
-        {/* Header */}
         <div style={{ marginTop: 28, marginBottom: 36 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
             <h1 style={{ fontSize: 30, fontWeight: 700, margin: 0, letterSpacing: "-0.5px" }}>

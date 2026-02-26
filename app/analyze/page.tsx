@@ -3,261 +3,6 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 
-type TopToken = {
-  id:             string;
-  symbol:         string;
-  name:           string;
-  image:          string;
-  currentPrice:   number;
-  marketCap:      number;
-  volume24h:      number;
-  priceChange24h: number;
-  address:        string | null;
-  rank:           number;
-};
-
-const CHAIN_LABEL: Record<string, string> = {
-  ethereum: "Ethereum",
-  bsc:      "BNB Chain",
-  polygon:  "Polygon",
-};
-
-function fmtCompact(n: number): string {
-  if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(1)}B`;
-  if (n >= 1_000_000)     return `$${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000)         return `$${(n / 1_000).toFixed(0)}K`;
-  return `$${n.toFixed(2)}`;
-}
-
-function fmtPrice(n: number): string {
-  if (n >= 1000) return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-  if (n >= 1)    return `$${n.toFixed(2)}`;
-  if (n >= 0.01) return `$${n.toFixed(4)}`;
-  return `$${n.toFixed(6)}`;
-}
-
-function TopTokensPanel({
-  chain,
-  onSelect,
-}: {
-  chain: string;
-  onSelect: (address: string) => void;
-}) {
-  const [tokens, setTokens]   = useState<TopToken[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error,   setError]   = useState("");
-
-  useEffect(() => {
-    setLoading(true);
-    setError("");
-    setTokens([]);
-    fetch(`/api/top-tokens?chain=${chain}`)
-      .then(async (res) => {
-        const data = await res.json();
-        if (!res.ok || data.error) { setError(data.error || "Failed to load"); return; }
-        setTokens(data.tokens ?? []);
-      })
-      .catch(() => setError("Network error"))
-      .finally(() => setLoading(false));
-  }, [chain]);
-
-  const CHAIN_GLOW: Record<string, string> = {
-    ethereum: "rgba(98,126,234,0.15)",
-    bsc:      "rgba(240,185,11,0.12)",
-    polygon:  "rgba(130,71,229,0.15)",
-  };
-  const CHAIN_ACCENT: Record<string, string> = {
-    ethereum: "#627eea",
-    bsc:      "#f0b90b",
-    polygon:  "#8247e5",
-  };
-  const CHAIN_ICON: Record<string, string> = {
-    ethereum: "Ξ",
-    bsc:      "⬡",
-    polygon:  "⬡",
-  };
-
-  const accent = CHAIN_ACCENT[chain] ?? "#8b5cf6";
-  const glow   = CHAIN_GLOW[chain]   ?? "rgba(139,92,246,0.15)";
-  const icon   = CHAIN_ICON[chain]   ?? "◎";
-
-  return (
-    <div style={{
-      marginTop: 28,
-      background: "rgba(18,18,24,0.9)",
-      border: `1px solid ${accent}40`,
-      borderRadius: 16,
-      overflow: "hidden",
-      boxShadow: `0 0 40px ${glow}`,
-    }}>
-      <div style={{
-        padding: "16px 20px 14px",
-        borderBottom: `1px solid ${accent}25`,
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        background: `linear-gradient(135deg, ${glow}, transparent)`,
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{
-            fontSize: 15, fontWeight: 800, color: accent,
-            width: 28, height: 28, borderRadius: 8,
-            background: `${accent}20`,
-            display: "inline-flex", alignItems: "center", justifyContent: "center",
-          }}>
-            {icon}
-          </span>
-          <div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: "#e5e5e5", lineHeight: 1.2 }}>
-              Top Tokens on {CHAIN_LABEL[chain] ?? chain}
-            </div>
-            <div style={{ fontSize: 11, color: "#52525b", marginTop: 2 }}>
-              Ranked by market cap · click to analyse
-            </div>
-          </div>
-        </div>
-        <span style={{
-          fontSize: 10, padding: "3px 9px", borderRadius: 20, fontWeight: 700,
-          background: `${accent}18`, color: accent,
-          border: `1px solid ${accent}35`,
-          textTransform: "uppercase" as const, letterSpacing: "0.5px",
-        }}>
-          LIVE
-        </span>
-      </div>
-
-      {loading && (
-        <div style={{ padding: "32px 20px", textAlign: "center" }}>
-          <div style={{ display: "inline-flex", gap: 5 }}>
-            {[0,1,2].map((i) => (
-              <span key={i} style={{
-                width: 7, height: 7, borderRadius: "50%", background: accent,
-                display: "inline-block",
-                animation: `bounce 1.2s ease-in-out ${i * 0.2}s infinite`,
-              }} />
-            ))}
-          </div>
-          <p style={{ margin: "10px 0 0", fontSize: 12, color: "#52525b" }}>Loading top tokens…</p>
-        </div>
-      )}
-
-      {error && !loading && (
-        <div style={{ padding: "20px", fontSize: 12, color: "#f87171", textAlign: "center" }}>
-          ⚠ {error}
-        </div>
-      )}
-
-      {!loading && !error && tokens.length > 0 && (
-        <div>
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "28px 1fr auto",
-            gap: "0 12px",
-            padding: "8px 20px",
-            borderBottom: "1px solid rgba(255,255,255,0.04)",
-          }}>
-            <span style={{ fontSize: 10, color: "#3f3f46", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" }}>#</span>
-            <span style={{ fontSize: 10, color: "#3f3f46", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" }}>Token</span>
-            <span style={{ fontSize: 10, color: "#3f3f46", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", textAlign: "right" as const }}>Price / MCap</span>
-          </div>
-
-          {tokens.map((t, i) => {
-            const up = t.priceChange24h >= 0;
-            const changeColor = up ? "#22c55e" : "#ef4444";
-            const hasAddr = !!t.address;
-
-            return (
-              <div
-                key={t.id}
-                onClick={() => hasAddr && onSelect(t.address!)}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "28px 1fr auto",
-                  gap: "0 12px",
-                  alignItems: "center",
-                  padding: "10px 20px",
-                  borderTop: i === 0 ? "none" : "1px solid rgba(255,255,255,0.03)",
-                  cursor: hasAddr ? "pointer" : "default",
-                  transition: "background 0.15s",
-                  position: "relative" as const,
-                  overflow: "hidden",
-                }}
-                onMouseEnter={(e) => {
-                  if (hasAddr) e.currentTarget.style.background = `${accent}08`;
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "transparent";
-                }}
-              >
-                <span style={{
-                  fontSize: i < 3 ? 13 : 11,
-                  fontWeight: 700,
-                  color: i === 0 ? "#f59e0b" : i === 1 ? "#9ca3af" : i === 2 ? "#cd7c2f" : "#3f3f46",
-                  textAlign: "center" as const,
-                }}>
-                  {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : t.rank}
-                </span>
-
-                <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-                  {t.image ? (
-                    <img src={t.image} alt={t.symbol}
-                      style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0, background: "#18181b" }} />
-                  ) : (
-                    <div style={{
-                      width: 28, height: 28, borderRadius: "50%", flexShrink: 0,
-                      background: `${accent}20`,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: 10, fontWeight: 700, color: accent,
-                    }}>
-                      {t.symbol.slice(0, 2)}
-                    </div>
-                  )}
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{
-                      fontSize: 13, fontWeight: 600, color: "#e5e5e5",
-                      whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis",
-                      display: "flex", alignItems: "center", gap: 6,
-                    }}>
-                      {t.name}
-                      {hasAddr && (
-                        <span style={{
-                          fontSize: 9, padding: "1px 5px", borderRadius: 5,
-                          background: `${accent}18`, color: accent,
-                          border: `1px solid ${accent}30`,
-                          fontWeight: 700, flexShrink: 0,
-                        }}>USE</span>
-                      )}
-                    </div>
-                    <div style={{ fontSize: 11, color: "#52525b", marginTop: 1 }}>
-                      {t.symbol}
-                      {!hasAddr && <span style={{ marginLeft: 6, fontSize: 9, color: "#3f3f46" }}>no address</span>}
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ textAlign: "right" as const }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: "#e5e5e5" }}>{fmtPrice(t.currentPrice)}</div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "flex-end", marginTop: 2 }}>
-                    <span style={{ fontSize: 10, color: changeColor, fontWeight: 600 }}>
-                      {up ? "▲" : "▼"} {Math.abs(t.priceChange24h).toFixed(2)}%
-                    </span>
-                    <span style={{ fontSize: 10, color: "#3f3f46" }}>{fmtCompact(t.marketCap)}</span>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      <div style={{
-        padding: "10px 20px",
-        borderTop: "1px solid rgba(255,255,255,0.04)",
-        fontSize: 10, color: "#27272a",
-      }}>
-        Source: CoinGecko · 5 min cache · Click any token to load its address
-      </div>
-    </div>
-  );
-}
 
 // ─── Exchange listing types ────────────────────────────────────────────────
 type ExchangeListing = {
@@ -1132,9 +877,9 @@ export default function AnalyzePage() {
       <div style={{ maxWidth: 720, margin: "0 auto", fontFamily: "system-ui, -apple-system, sans-serif" }}>
         {/* Nav row */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-          <Link href="/" style={{ 
-            fontSize: 13, 
-            color: "#8b5cf6", 
+          <Link href="/" style={{
+            fontSize: 13,
+            color: "#8b5cf6",
             textDecoration: "none",
             display: "inline-flex",
             alignItems: "center",
@@ -1142,18 +887,32 @@ export default function AnalyzePage() {
           }}>
             ← Back
           </Link>
-          <Link href="/compare" style={{
-            fontSize: 13, fontWeight: 600,
-            color: "#b980ff",
-            textDecoration: "none",
-            display: "inline-flex", alignItems: "center", gap: 6,
-            padding: "6px 14px", borderRadius: 8,
-            border: "1px solid rgba(139,92,246,0.3)",
-            background: "rgba(139,92,246,0.08)",
-            transition: "all 0.2s",
-          }}>
-            ⚔️ Compare Tokens
-          </Link>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Link href="/tokens" style={{
+              fontSize: 13, fontWeight: 600,
+              color: "#22d3ee",
+              textDecoration: "none",
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "6px 14px", borderRadius: 8,
+              border: "1px solid rgba(34,211,238,0.3)",
+              background: "rgba(34,211,238,0.07)",
+              transition: "all 0.2s",
+            }}>
+              🏆 Top Tokens
+            </Link>
+            <Link href="/compare" style={{
+              fontSize: 13, fontWeight: 600,
+              color: "#b980ff",
+              textDecoration: "none",
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "6px 14px", borderRadius: 8,
+              border: "1px solid rgba(139,92,246,0.3)",
+              background: "rgba(139,92,246,0.08)",
+              transition: "all 0.2s",
+            }}>
+              ⚔️ Compare Tokens
+            </Link>
+          </div>
         </div>
 
         <h1 style={{ 
@@ -1247,10 +1006,7 @@ export default function AnalyzePage() {
             ))}
           </select>
 
-          <TopTokensPanel
-            chain={chain}
-            onSelect={(addr) => { setToken(addr); setError(""); }}
-          />
+
 
           {/* Run button */}
           <button

@@ -100,15 +100,30 @@ export default function TokensPage() {
           <Link href="/" style={{ fontSize: 13, color: "#8b5cf6", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>
             ← Back
           </Link>
-          <Link href="/analyze" style={{
-            fontSize: 13, fontWeight: 600, color: "#b980ff", textDecoration: "none",
-            display: "inline-flex", alignItems: "center", gap: 6,
-            padding: "6px 14px", borderRadius: 8,
-            border: "1px solid rgba(139,92,246,0.3)",
-            background: "rgba(139,92,246,0.08)",
-          }}>
-            Analyze a Token →
-          </Link>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Link href="/compare" style={{
+              fontSize: 13, fontWeight: 600,
+              color: "#b980ff",
+              textDecoration: "none",
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "6px 14px", borderRadius: 8,
+              border: "1px solid rgba(139,92,246,0.3)",
+              background: "rgba(139,92,246,0.08)",
+            }}>
+              ⚔️ Compare Tokens
+            </Link>
+            <Link href="/analyze" style={{
+              fontSize: 13, fontWeight: 600,
+              color: "#22d3ee",
+              textDecoration: "none",
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "6px 14px", borderRadius: 8,
+              border: "1px solid rgba(34,211,238,0.3)",
+              background: "rgba(34,211,238,0.07)",
+            }}>
+              🔍 Analyze Token →
+            </Link>
+          </div>
         </div>
 
         <div style={{ textAlign: "center", marginBottom: 40 }}>

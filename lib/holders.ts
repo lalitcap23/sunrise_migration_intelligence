@@ -43,10 +43,9 @@ const ETHERSCAN_BASE = "https://api.etherscan.io/v2/api";
 // BSC is intentionally absent — needs a separate BscScan key.
 const CHAIN_ID_MAP: Record<string, string> = {
   ethereum: "1",
-  polygon:  "137",
+  polygon: "137",
 };
 
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 export type TopHolder = {
   address: string;
@@ -63,7 +62,7 @@ export type HolderData = {
   dataNote: string;
 };
 
-// ─── Internal Etherscan response types ────────────────────────────────────────
+// Internal Etherscan response types 
 
 type EtherscanResponse<T> = {
   status: "1" | "0";
@@ -80,7 +79,7 @@ type TokenTx = {
   hash: string;
 };
 
-// ─── Helper: build Etherscan V2 URL ──────────────────────────────────────────
+// Helper: build Etherscan V2 URL
 
 function buildUrl(chainId: string, params: Record<string, string>): string {
   const query = new URLSearchParams({
@@ -91,7 +90,7 @@ function buildUrl(chainId: string, params: Record<string, string>): string {
   return `${ETHERSCAN_BASE}?${query.toString()}`;
 }
 
-// ─── Main fetch function ──────────────────────────────────────────────────────
+// Main fetch function
 
 /**
  * Fetches holder concentration data for any ERC-20 / ERC-20-compatible token.
@@ -121,16 +120,16 @@ export async function fetchHolderData(
   }
 
   try {
-    // ── 1. Fetch the last 1000 transfer events ──────────────────────────────
+    // 1. Fetch the last 1000 transfer events
     //   Using page=1, offset=1000 — this is the max per page on free tier.
     //   sort=desc → most recent first (recent activity matters more for migration).
     const txUrl = buildUrl(chainId, {
-      module:          "account",
-      action:          "tokentx",
+      module: "account",
+      action: "tokentx",
       contractaddress: tokenAddress,
-      page:            "1",
-      offset:          "1000",
-      sort:            "desc",
+      page: "1",
+      offset: "1000",
+      sort: "desc",
     });
 
     const txRes = await fetch(txUrl, { next: { revalidate: 300 } }); // cache 5 min
@@ -152,7 +151,7 @@ export async function fetchHolderData(
     const transfers: TokenTx[] = txJson.result;
     const decimals = parseInt(transfers[0]?.tokenDecimal ?? "18", 10);
 
-    // ── 2. Aggregate received volume per wallet ─────────────────────────────
+    // 2. Aggregate received volume per wallet 
     //   We parse `value` as a BigInt-safe float by dividing by 10^decimals.
     //   Using a Map for O(1) lookup per transfer.
     const receivedByAddress = new Map<string, number>();
@@ -169,7 +168,7 @@ export async function fetchHolderData(
       totalVolume += amount;
     }
 
-    // ── 3. Sort by received volume and pick top 10 ─────────────────────────
+    // 3. Sort by received volume and pick top 10 
     const sorted = Array.from(receivedByAddress.entries())
       .sort((a, b) => b[1] - a[1]);
 

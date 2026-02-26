@@ -1,5 +1,5 @@
 /**
-* LIQUIDITY DATA FETCHER — DeFiLlama API (completely free, no API key needed)
+* LIQUIDITY DATA FETCHER — DeFiLlama API 
  *
  * ENDPOINTS USED:
  * ┌──────────────────────────────────────────────┬──────────────┬────────────┐
@@ -13,10 +13,7 @@
  * │   → we filter by token address               │ after cache  │            │
  * └──────────────────────────────────────────────┴──────────────┴────────────┘
  *
- * WHY CACHE MATTERS:
- *  Next.js `fetch` caches responses by URL. `yields.llama.fi/pools` is ONE URL
- *  that all token analyses share. So the first analysis of the day pays the 3s
- *  cost; every subsequent call uses the in-memory cache → fast.
+
  *
  * WHAT WE COMPUTE:
  *  ┌──────────────────────┬──────────────────────────────────────────────────┐
