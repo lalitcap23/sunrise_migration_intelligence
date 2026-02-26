@@ -804,12 +804,15 @@ function LiquiditySimPanel({ sim }: { sim: SimData }) {
 }
 
 export default function AnalyzePage() {
-  const [token, setToken] = useState("");
-  const [chain, setChain] = useState("ethereum");
+  const [token, setToken]     = useState("");
+  const [chain, setChain]     = useState("ethereum");
   const [running, setRunning] = useState(false);
-  const [error, setError] = useState("");
-  const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [error, setError]     = useState("");
+  const [result, setResult]   = useState<AnalysisResult | null>(null);
   const [analyzed, setAnalyzed] = useState<{ token: string; chain: string } | null>(null);
+  const [ipfsStatus, setIpfsStatus] = useState<"idle" | "pinning" | "done" | "error">("idle");
+  const [ipfsCid,    setIpfsCid]    = useState<string | null>(null);
+  const [ipfsError,  setIpfsError]  = useState("");
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -820,6 +823,57 @@ export default function AnalyzePage() {
     if (c) setChain(c);
   }, []);
 
+  async function saveToIPFS() {
+    if (!result) return;
+    setIpfsStatus("pinning");
+    setIpfsError("");
+    const now = new Date().toISOString();
+    try {
+      const res = await fetch("/api/ipfs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tokenName:       result.token.name,
+          tokenSymbol:     result.token.symbol,
+          contractAddress: result.token.address,
+          chain:           result.token.chain,
+          analyzedAt:      now,
+          scores:          result.scores,
+          modules:         result.modules,
+          exchanges:       result.exchanges,
+          chart:           result.chart,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setIpfsStatus("error");
+        setIpfsError(data.error ?? "Pin failed");
+        return;
+      }
+      setIpfsCid(data.cid);
+      setIpfsStatus("done");
+      const saved = {
+        cid:             data.cid,
+        tokenName:       result.token.name,
+        tokenSymbol:     result.token.symbol,
+        contractAddress: result.token.address,
+        chain:           result.token.chain,
+        overall:         result.scores.overall,
+        strategy:        result.modules.strategy.strategy,
+        savedAt:         new Date().toISOString(),
+        gateway:         data.gateway,
+      };
+      try {
+        const existing = JSON.parse(localStorage.getItem("sunrise_reports") ?? "[]");
+        existing.push(saved);
+        localStorage.setItem("sunrise_reports", JSON.stringify(existing));
+      } catch {}
+    } catch {
+      setIpfsStatus("error");
+      setIpfsError("Network error — check PINATA_JWT in .env");
+    }
+  }
+
   async function handleRun() {
     if (!token.startsWith("0x") || token.length !== 42) {
       setError("Enter a valid contract address (0x… 42 chars).");
@@ -828,6 +882,9 @@ export default function AnalyzePage() {
     setError("");
     setRunning(true);
     setResult(null);
+    setIpfsStatus("idle");
+    setIpfsCid(null);
+    setIpfsError("");
 
     try {
       const res = await fetch("/api/analyze", {
@@ -888,6 +945,18 @@ export default function AnalyzePage() {
             ← Back
           </Link>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Link href="/reports" style={{
+              fontSize: 13, fontWeight: 600,
+              color: "#f59e0b",
+              textDecoration: "none",
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "6px 14px", borderRadius: 8,
+              border: "1px solid rgba(245,158,11,0.3)",
+              background: "rgba(245,158,11,0.07)",
+              transition: "all 0.2s",
+            }}>
+              📋 Reports
+            </Link>
             <Link href="/tokens" style={{
               fontSize: 13, fontWeight: 600,
               color: "#22d3ee",
@@ -1082,18 +1151,70 @@ export default function AnalyzePage() {
                   {formatNumber(result.token.currentPrice)} · MCap: {formatNumber(result.token.marketCap)}
                 </p>
               </div>
-              <div style={{ textAlign: "right" }}>
-                <div style={{ 
-                  fontSize: 40, 
-                  fontWeight: 700, 
-                  color: result.scores.overall >= 70 ? "#22c55e" : result.scores.overall >= 40 ? "#eab308" : "#ef4444",
-                  lineHeight: 1,
-                }}>
-                  {result.scores.overall}
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10 }}>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{
+                    fontSize: 40,
+                    fontWeight: 700,
+                    color: result.scores.overall >= 70 ? "#22c55e" : result.scores.overall >= 40 ? "#eab308" : "#ef4444",
+                    lineHeight: 1,
+                  }}>
+                    {result.scores.overall}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#71717a", textTransform: "uppercase", letterSpacing: "0.5px", marginTop: 4 }}>
+                    Overall Score
+                  </div>
                 </div>
-                <div style={{ fontSize: 11, color: "#71717a", textTransform: "uppercase", letterSpacing: "0.5px", marginTop: 4 }}>
-                  Overall Score
-                </div>
+
+                {ipfsStatus === "idle" && (
+                  <button
+                    onClick={saveToIPFS}
+                    style={{
+                      fontSize: 12, fontWeight: 700, padding: "8px 16px", borderRadius: 8,
+                      border: "1px solid rgba(245,158,11,0.4)",
+                      background: "rgba(245,158,11,0.1)",
+                      color: "#f59e0b", cursor: "pointer",
+                      display: "flex", alignItems: "center", gap: 6,
+                      transition: "all 0.2s",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    📌 Save to IPFS
+                  </button>
+                )}
+
+                {ipfsStatus === "pinning" && (
+                  <div style={{ fontSize: 12, color: "#f59e0b", display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ animation: "pulse 1.5s infinite" }}>⏳</span> Pinning to IPFS…
+                  </div>
+                )}
+
+                {ipfsStatus === "done" && ipfsCid && (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                    <div style={{ fontSize: 11, color: "#22c55e", display: "flex", alignItems: "center", gap: 5 }}>
+                      ✓ Pinned to IPFS
+                    </div>
+                    <code style={{
+                      fontSize: 10, color: "#a78bfa",
+                      background: "rgba(139,92,246,0.1)",
+                      padding: "3px 8px", borderRadius: 5,
+                    }}>
+                      {ipfsCid.slice(0, 12)}…{ipfsCid.slice(-6)}
+                    </code>
+                    <Link href="/reports" style={{
+                      fontSize: 11, color: "#f59e0b", textDecoration: "none",
+                      display: "flex", alignItems: "center", gap: 4,
+                    }}>
+                      View in Reports →
+                    </Link>
+                  </div>
+                )}
+
+                {ipfsStatus === "error" && (
+                  <div style={{ fontSize: 11, color: "#f87171", maxWidth: 160, textAlign: "right" }}>
+                    ⚠ {ipfsError}
+                  </div>
+                )}
               </div>
             </div>
 

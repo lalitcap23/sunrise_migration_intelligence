@@ -117,6 +117,9 @@ export default function Home() {
           <Link href="/tokens" className="hover:text-white transition-colors text-violet-400 font-medium">
             Top Tokens
           </Link>
+          <Link href="/reports" className="hover:text-white transition-colors text-amber-400 font-medium">
+            📋 Reports
+          </Link>
         </div>
         <Link
           href="/analyze"
