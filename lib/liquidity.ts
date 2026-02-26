@@ -41,7 +41,7 @@
  *  polygon  │ "polygon"             │ "Polygon"
  */
 
-// ─── DeFiLlama chain name maps ────────────────────────────────────────────────
+// DeFiLlama chain name maps 
 
 // Used in `coins.llama.fi/prices/current/{prefix}:{address}`
 const COINS_CHAIN_PREFIX: Record<string, string> = {
@@ -61,7 +61,7 @@ const YIELDS_CHAIN_NAME: Record<string, string> = {
 
 export type PoolEntry = {
   project: string;   // e.g. "aave-v3", "uniswap-v3"
-  symbol: string;    // e.g. "USDC-WETH"
+  symbol: string;    
   tvlUsd: number;
   apy: number | null;
   poolId: string;
@@ -77,8 +77,7 @@ export type LiquidityData = {
   dataNote: string;
 };
 
-// ─── Internal DeFiLlama types ─────────────────────────────────────────────────
-
+// Internal DeFiLlama types
 type DefiLlamaPool = {
   pool: string;
   project: string;
@@ -103,7 +102,7 @@ type DefiLlamaPoolsResponse = {
   data: DefiLlamaPool[];
 };
 
-// ─── Main fetch function ──────────────────────────────────────────────────────
+// Main fetch function
 
 /**
  * Fetches real pool TVL and price confidence for a token from DeFiLlama.
@@ -122,7 +121,7 @@ export async function fetchLiquidityData(
   const coinsKey      = `${coinsPrefix}:${tokenAddress}`;
 
   try {
-    // ── Run both DeFiLlama calls in parallel ──────────────────────────────────
+    // ── Run both DeFiLlama calls in parallel 
     const [priceRes, poolsRes] = await Promise.all([
 
       // 1. Price + confidence — fast, targeted, cached 5 min
@@ -139,7 +138,7 @@ export async function fetchLiquidityData(
       ),
     ]);
 
-    // ── Parse price / confidence ──────────────────────────────────────────────
+    //  Parse price / confidence 
     let priceConfidence = 0;
     let priceUsd = 0;
 
@@ -152,7 +151,7 @@ export async function fetchLiquidityData(
       }
     }
 
-    // ── Parse and filter pools by token address ───────────────────────────────
+    // Parse and filter pools by token address
     let totalPoolTvlUsd = 0;
     let poolCount = 0;
     const topPools: PoolEntry[] = [];
@@ -202,7 +201,7 @@ export async function fetchLiquidityData(
     };
 
   } catch (err) {
-    // Never crash the parent — return safe defaults
+    // Never crash the parent  return safe defaults
     console.error(`[liquidity] DeFiLlama fetch failed for ${chain}:`, err);
     return {
       totalPoolTvlUsd: 0,

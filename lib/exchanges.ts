@@ -130,7 +130,6 @@ type CoinGeckoTicker = {
     trade_url?: string | null;
 };
 
-// ─── Main function ────────────────────────────────────────────────────────────
 
 /**
  * Converts a raw CoinGecko `tickers` array into categorised DEX/CEX listings.
@@ -155,7 +154,7 @@ export function parseExchangeListings(
         };
     }
 
-    // ── Step 1: Group tickers by exchange identifier ───────────────────────────
+  // step 1: Group tickers by exchange identifier
     // We want ONE entry per unique exchange (the one with the highest USD volume).
 
     const bestByExchange = new Map<string, CoinGeckoTicker>();
@@ -172,7 +171,7 @@ export function parseExchangeListings(
         }
     }
 
-    // ── Step 2: Classify and build listing objects ─────────────────────────────
+    //  Step 2: Classify and build listing objects 
 
     const dexListings: ExchangeListing[] = [];
     const cexListings: ExchangeListing[] = [];
@@ -215,12 +214,12 @@ export function parseExchangeListings(
         }
     }
 
-    // ── Step 3: Sort by volume desc ────────────────────────────────────────────
+    //Step 3: Sort by volume desc 
 
     dexListings.sort((a, b) => b.volumeUsd - a.volumeUsd);
     cexListings.sort((a, b) => b.volumeUsd - a.volumeUsd);
 
-    // ── Step 4: Compute summary stats ─────────────────────────────────────────
+    //  Step 4: Compute summary stats 
 
     const totalVolumeUsd = [...dexListings, ...cexListings].reduce(
         (sum, e) => sum + e.volumeUsd,
