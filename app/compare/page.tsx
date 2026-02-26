@@ -1,105 +1,61 @@
 "use client";
-
 import { useState, useCallback } from "react";
 import Link from "next/link";
+import {
+  RadarChart, PolarGrid, PolarAngleAxis, Radar,
+  ResponsiveContainer, Tooltip,
+} from "recharts";
 
-interface ScoreSnapshot {
-  demand:        number;
-  marketPresence: number;
-  liquidity:     number;
-  bridgeRisk:    number;
-  dumpRisk:      number;
-  overall:       number;
-}
-
-interface TokenMeta {
-  name:         string;
-  symbol:       string;
-  image:        string | null;
-  currentPrice: number;
-  marketCap:    number;
-}
-
-interface StrategyResult {
-  strategy:  string;
-  rationale: string;
-}
-
-interface CompareToken {
-  id:     string;
-  token:  string;
-  chain:  string;
-}
-
+interface ScoreSnapshot { demand: number; marketPresence: number; liquidity: number; bridgeRisk: number; dumpRisk: number; overall: number; }
+interface TokenMeta    { name: string; symbol: string; image: string | null; currentPrice: number; marketCap: number; }
+interface StrategyResult { strategy: string; rationale: string; }
+interface CompareToken { id: string; token: string; chain: string; }
 interface CompareResult {
-  id:       string;
-  token:    string;
-  chain:    string;
-  status:   "idle" | "loading" | "done" | "error";
-  error?:   string;
-  meta?:    TokenMeta;
-  scores?:  ScoreSnapshot;
-  strategy?: StrategyResult;
+  id: string; token: string; chain: string;
+  status: "idle" | "loading" | "done" | "error"; error?: string;
+  meta?: TokenMeta; scores?: ScoreSnapshot; strategy?: StrategyResult;
 }
 
 const CHAINS = [
-  { id: "ethereum", label: "Ethereum", icon: "⟠" },
-  { id: "bsc",      label: "BNB Chain", icon: "⬡" },
-  { id: "polygon",  label: "Polygon",   icon: "⬡" },
+  { id: "ethereum", label: "Ethereum",  accent: "#60a5fa" },
+  { id: "bsc",      label: "BNB Chain",  accent: "#fbbf24" },
+  { id: "polygon",  label: "Polygon",    accent: "#c084fc" },
 ];
 
-const CATEGORIES = [
-  { key: "demand",         label: "Market Demand",    info: false },
-  { key: "marketPresence", label: "Market Presence",  info: false },
-  { key: "liquidity",      label: "Liquidity",        info: false },
-  { key: "bridgeRisk",     label: "Bridge Risk",      info: false },
-  { key: "dumpRisk",       label: "Dump Risk",        info: true  },
-] as const;
-
-function scoreColor(score: number, inverse = false): string {
-  const s = inverse ? 100 - score : score;
-  return s >= 70 ? "#22c55e" : s >= 40 ? "#eab308" : "#ef4444";
-}
-
-function scoreBg(score: number, inverse = false): string {
-  const s = inverse ? 100 - score : score;
-  return s >= 70
-    ? "rgba(34,197,94,0.12)"
-    : s >= 40
-    ? "rgba(234,179,8,0.12)"
-    : "rgba(239,68,68,0.12)";
-}
-
+const SCORE_COLOR = (s: number) => s >= 70 ? "#4ade80" : s >= 40 ? "#fbbf24" : "#f87171";
+const SCORE_LABEL = (s: number) => s >= 70 ? "STRONG" : s >= 40 ? "MODERATE" : "WEAK";
 function fmtMoney(n: number): string {
-  if (n >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
-  if (n >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
-  if (n >= 1e3) return `$${(n / 1e3).toFixed(1)}K`;
-  return `$${n.toFixed(2)}`;
+  if (n >= 1e9) return `$${(n/1e9).toFixed(2)}B`;
+  if (n >= 1e6) return `$${(n/1e6).toFixed(2)}M`;
+  return `$${(n/1e3).toFixed(1)}K`;
 }
-
-const MEDALS = ["🥇", "🥈", "🥉", "4️⃣"];
 
 let idCounter = 0;
-function newId() { return `t-${++idCounter}`; }
+const newId = () => `t-${++idCounter}`;
 
-function ScoreRing({ score, size = 72 }: { score: number; size?: number }) {
-  const r     = (size - 8) / 2;
-  const circ  = 2 * Math.PI * r;
-  const fill  = (score / 100) * circ;
-  const color = scoreColor(score);
+const TOKEN_COLORS = ["#38bdf8","#c084fc","#4ade80","#fbbf24"];
+
+const CATEGORIES = [
+  { key: "demand",         label: "MARKET DEMAND",    lower: false },
+  { key: "marketPresence", label: "MARKET PRESENCE",  lower: false },
+  { key: "liquidity",      label: "LIQUIDITY",         lower: false },
+  { key: "bridgeRisk",     label: "BRIDGE RISK",       lower: false },
+  { key: "dumpRisk",       label: "DUMP RISK",         lower: true  },
+] as const;
+
+function ScoreRing({ score, color, size = 60 }: { score: number; color: string; size?: number }) {
+  const r    = (size - 8) / 2;
+  const circ = 2 * Math.PI * r;
+  const fill = (score / 100) * circ;
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#1f1f27" strokeWidth={6} />
-      <circle
-        cx={size/2} cy={size/2} r={r} fill="none"
-        stroke={color} strokeWidth={6}
-        strokeDasharray={`${fill} ${circ - fill}`}
-        strokeLinecap="round"
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth={6} />
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={6}
+        strokeDasharray={`${fill} ${circ-fill}`} strokeLinecap="round"
         transform={`rotate(-90 ${size/2} ${size/2})`}
-        style={{ transition: "stroke-dasharray 0.7s ease" }}
-      />
+        style={{ transition: "stroke-dasharray 0.8s ease" }} />
       <text x="50%" y="50%" dominantBaseline="middle" textAnchor="middle"
-        fill={color} fontSize={size * 0.26} fontWeight={700} fontFamily="system-ui">
+        fill={color} fontSize={size*0.27} fontWeight={700} fontFamily="IBM Plex Mono">
         {score}
       </text>
     </svg>
@@ -107,7 +63,7 @@ function ScoreRing({ score, size = 72 }: { score: number; size?: number }) {
 }
 
 export default function ComparePage() {
-  const [tokens, setTokens] = useState<CompareToken[]>([
+  const [tokens,  setTokens]  = useState<CompareToken[]>([
     { id: newId(), token: "", chain: "ethereum" },
     { id: newId(), token: "", chain: "ethereum" },
   ]);
@@ -115,559 +71,322 @@ export default function ComparePage() {
   const [running, setRunning] = useState(false);
   const [hasRun,  setHasRun]  = useState(false);
 
-  const addSlot = () => {
-    if (tokens.length < 4)
-      setTokens((prev) => [...prev, { id: newId(), token: "", chain: "ethereum" }]);
-  };
-  const removeSlot = (id: string) => {
-    if (tokens.length > 2) setTokens((prev) => prev.filter((t) => t.id !== id));
-  };
-  const updateSlot = (id: string, field: "token" | "chain", value: string) => {
-    setTokens((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, [field]: value } : t))
-    );
-  };
+  const addSlot    = () => tokens.length < 4 && setTokens(p => [...p, { id: newId(), token: "", chain: "ethereum" }]);
+  const removeSlot = (id: string) => tokens.length > 2 && setTokens(p => p.filter(t => t.id !== id));
+  const updateSlot = (id: string, f: "token"|"chain", v: string) =>
+    setTokens(p => p.map(t => t.id === id ? { ...t, [f]: v } : t));
 
   const runComparison = useCallback(async () => {
-    const valid = tokens.filter((t) => t.token.startsWith("0x") && t.token.length === 42);
-    if (valid.length < 1) return;
-
-    setRunning(true);
-    setHasRun(true);
-
-    const initial: CompareResult[] = valid.map((t) => ({
-      id: t.id, token: t.token, chain: t.chain, status: "loading",
-    }));
+    const valid = tokens.filter(t => t.token.startsWith("0x") && t.token.length === 42);
+    if (!valid.length) return;
+    setRunning(true); setHasRun(true);
+    const initial: CompareResult[] = valid.map(t => ({ ...t, status: "loading" }));
     setResults(initial);
-
     const fetches = valid.map(async (t): Promise<CompareResult> => {
       try {
-        const res  = await fetch("/api/analyze", {
-          method:  "POST",
-          headers: { "Content-Type": "application/json" },
-          body:    JSON.stringify({ token: t.token, chain: t.chain }),
-        });
+        const res  = await fetch("/api/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: t.token, chain: t.chain }) });
         const data = await res.json();
         if (!res.ok) return { ...t, status: "error", error: data.error || "Analysis failed" };
-
-        return {
-          ...t,
-          status: "done",
-          meta: {
-            name:         data.token.name,
-            symbol:       data.token.symbol,
-            image:        data.token.image,
-            currentPrice: data.token.currentPrice,
-            marketCap:    data.token.marketCap,
-          },
-          scores:   data.scores,
-          strategy: data.modules.strategy,
-        };
-      } catch {
-        return { ...t, status: "error", error: "Network error" };
-      }
+        return { ...t, status: "done", meta: { name: data.token.name, symbol: data.token.symbol, image: data.token.image, currentPrice: data.token.currentPrice, marketCap: data.token.marketCap }, scores: data.scores, strategy: data.modules.strategy };
+      } catch { return { ...t, status: "error", error: "Network error" }; }
     });
-
-    const promises = fetches.map((p, i) =>
-      p.then((result) => {
-        setResults((prev) => {
-          const next = [...prev];
-          next[i] = result;
-          return next;
-        });
-        return result;
-      })
-    );
-
-    await Promise.allSettled(promises);
+    fetches.forEach((p, i) => p.then(result => setResults(prev => { const n=[...prev]; n[i]=result; return n; })));
+    await Promise.allSettled(fetches);
     setRunning(false);
   }, [tokens]);
 
-  const validInputs    = tokens.filter((t) => t.token.startsWith("0x") && t.token.length === 42);
-  const doneResults    = results.filter((r) => r.status === "done");
-  const ranked         = [...doneResults].sort((a, b) => (b.scores?.overall ?? 0) - (a.scores?.overall ?? 0));
+  const validInputs = tokens.filter(t => t.token.startsWith("0x") && t.token.length === 42);
+  const doneResults = results.filter(r => r.status === "done");
+  const ranked      = [...doneResults].sort((a,b) => (b.scores?.overall??0)-(a.scores?.overall??0));
+
+  const radarData = CATEGORIES.map(cat => {
+    const point: Record<string, string | number> = { metric: cat.label.split(" ")[0] };
+    doneResults.forEach((r, i) => {
+      const raw = r.scores?.[cat.key] ?? 0;
+      point[r.meta?.symbol ?? `T${i+1}`] = cat.lower ? 100 - raw : raw;
+    });
+    return point;
+  });
 
   return (
-    <div style={{
-      minHeight:   "100vh",
-      background:  "linear-gradient(135deg, #0a0a0f 0%, #0d0d18 50%, #0a0a0f 100%)",
-      padding:     "40px 20px 80px",
-      fontFamily:  "system-ui, -apple-system, sans-serif",
-      color:       "#e5e5e5",
-    }}>
-      <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+    <div style={{ minHeight: "100vh", background: "#07070e", color: "#e2e8f0", fontFamily: "'IBM Plex Mono', monospace" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&family=Syne:wght@700;800&display=swap');
+        *{box-sizing:border-box;margin:0;padding:0;}
+        .slot-card{transition:border-color 0.2s;}
+        .slot-card:hover{border-color:rgba(255,255,255,0.1)!important;}
+        input,select{transition:border-color 0.2s;}
+        input:focus,select:focus{outline:none;border-color:#38bdf850!important;}
+        @keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+        @keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+        .score-cell:hover{background:rgba(255,255,255,0.02);}
+      `}</style>
 
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <Link href="/" style={{ fontSize: 13, color: "#8b5cf6", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>
-            ← Back
-          </Link>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <Link href="/tokens" style={{
-              fontSize: 13, fontWeight: 600,
-              color: "#22d3ee",
-              textDecoration: "none",
-              display: "inline-flex", alignItems: "center", gap: 6,
-              padding: "6px 14px", borderRadius: 8,
-              border: "1px solid rgba(34,211,238,0.3)",
-              background: "rgba(34,211,238,0.07)",
-            }}>
-              🏆 Top Tokens
-            </Link>
-            <Link href="/analyze" style={{
-              fontSize: 13, fontWeight: 600,
-              color: "#b980ff",
-              textDecoration: "none",
-              display: "inline-flex", alignItems: "center", gap: 6,
-              padding: "6px 14px", borderRadius: 8,
-              border: "1px solid rgba(139,92,246,0.3)",
-              background: "rgba(139,92,246,0.08)",
-            }}>
-              🔍 Analyze Token
-            </Link>
+      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "48px 24px 80px" }}>
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 48 }}>
+          <Link href="/" style={{ fontSize: 12, color: "#475569", textDecoration: "none", letterSpacing: "0.05em" }}>← BACK</Link>
+          <div style={{ display: "flex", gap: 8 }}>
+            {[
+              { href: "/tokens",  label: "MARKETS",  color: "#38bdf8" },
+              { href: "/analyze", label: "ANALYZE",   color: "#60a5fa" },
+              { href: "/reports", label: "REPORTS",   color: "#fbbf24" },
+            ].map(b => (
+              <Link key={b.href} href={b.href} style={{ fontSize: 11, fontWeight: 600, color: b.color, textDecoration: "none", padding: "5px 14px", border: `1px solid ${b.color}40`, borderRadius: 4, background: `${b.color}0c`, letterSpacing: "0.08em" }}>{b.label}</Link>
+            ))}
           </div>
         </div>
 
-        <div style={{ marginTop: 28, marginBottom: 36 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-            <h1 style={{ fontSize: 30, fontWeight: 700, margin: 0, letterSpacing: "-0.5px" }}>
-              Token Battle{" "}
-              <span style={{
-                background: "linear-gradient(90deg, #8b5cf6, #22d3ee)",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-              }}>Compare</span>
-            </h1>
-            <span style={{
-              fontSize: 11, padding: "3px 10px", borderRadius: 20,
-              background: "rgba(139,92,246,0.15)", color: "#b980ff",
-              fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px",
-              border: "1px solid rgba(139,92,246,0.25)",
-            }}>Beta</span>
-          </div>
-          <p style={{ fontSize: 15, color: "#71717a", marginTop: 8, maxWidth: 600 }}>
-            Analyze up to 4 tokens side-by-side. Ranked by Migration Readiness Score — instantly see which asset to migrate first.
+        <div style={{ marginBottom: 36 }}>
+          <h1 style={{ fontFamily: "'Syne'", fontSize: 32, fontWeight: 800, color: "#ffffff", letterSpacing: "-0.02em", marginBottom: 6 }}>
+            Token Battle
+          </h1>
+          <p style={{ fontSize: 12, color: "#475569", letterSpacing: "0.03em" }}>
+            Compare up to 4 tokens side-by-side — ranked by migration readiness score
           </p>
         </div>
 
-        {/* Input Grid */}
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: `repeat(${Math.min(tokens.length, 4)}, 1fr)`,
-          gap: 12,
-          marginBottom: 20,
-        }}>
-          {tokens.map((t, i) => (
-            <div key={t.id} style={{
-              background:   "rgba(20,20,30,0.8)",
-              border:       "1px solid #27272a",
-              borderRadius: 14,
-              padding:      "16px",
-              position:     "relative",
-              backdropFilter: "blur(10px)",
-            }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                <span style={{ fontSize: 11, color: "#52525b", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.6px" }}>
-                  Token {i + 1}
-                </span>
-                {tokens.length > 2 && (
-                  <button onClick={() => removeSlot(t.id)} style={{
-                    width: 22, height: 22, borderRadius: "50%",
-                    background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)",
-                    color: "#f87171", fontSize: 14, cursor: "pointer",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                  }}>×</button>
-                )}
-              </div>
-
-              {/* Address input */}
-              <input
-                type="text"
-                value={t.token}
-                onChange={(e) => updateSlot(t.id, "token", e.target.value)}
-                placeholder="0x..."
-                disabled={running}
-                style={{
-                  width: "100%", boxSizing: "border-box",
-                  padding: "10px 12px", fontSize: 12,
-                  fontFamily: "monospace", border: "1px solid #3f3f46",
-                  borderRadius: 8, background: "#09090b",
-                  color: "#e5e5e5", outline: "none",
-                  marginBottom: 10,
-                  borderColor: t.token.length > 0 && (!t.token.startsWith("0x") || t.token.length !== 42)
-                    ? "rgba(239,68,68,0.5)" : "#3f3f46",
-                }}
-              />
-
-              {/* Chain selector */}
-              <select
-                value={t.chain}
-                onChange={(e) => updateSlot(t.id, "chain", e.target.value)}
-                disabled={running}
-                style={{
-                  width: "100%", padding: "9px 12px", fontSize: 13,
-                  border: "1px solid #3f3f46", borderRadius: 8,
-                  background: "#09090b", color: "#e5e5e5",
-                  outline: "none", cursor: "pointer",
-                }}
-              >
-                {CHAINS.map((c) => (
-                  <option key={c.id} value={c.id}>{c.icon} {c.label}</option>
-                ))}
-              </select>
-            </div>
-          ))}
-        </div>
-
-        {/* Action Row */}
-        <div style={{ display: "flex", gap: 12, marginBottom: 40, alignItems: "center" }}>
-          {tokens.length < 4 && (
-            <button
-              onClick={addSlot}
-              disabled={running}
-              style={{
-                padding: "10px 20px", fontSize: 13, borderRadius: 10,
-                border: "1px dashed #3f3f46",
-                background: "transparent", color: "#71717a",
-                cursor: "pointer", transition: "all 0.2s",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = "#8b5cf6";
-                e.currentTarget.style.color = "#b980ff";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = "#3f3f46";
-                e.currentTarget.style.color = "#71717a";
-              }}
-            >
-              + Add Token
-            </button>
-          )}
-
-          <button
-            onClick={runComparison}
-            disabled={running || validInputs.length < 1}
-            style={{
-              padding: "10px 32px", fontSize: 14, fontWeight: 600,
-              borderRadius: 10, border: "none",
-              cursor: running || validInputs.length < 1 ? "not-allowed" : "pointer",
-              background: running || validInputs.length < 1
-                ? "linear-gradient(135deg, #3f3f46, #27272a)"
-                : "linear-gradient(135deg, #8b5cf6, #7c3aed)",
-              color: running || validInputs.length < 1 ? "#71717a" : "#fff",
-              boxShadow: running || validInputs.length < 1 ? "none" : "0 4px 18px rgba(139,92,246,0.4)",
-              transition: "all 0.2s",
-            }}
-          >
-            {running ? "Running Analysis…" : `Compare ${validInputs.length > 0 ? validInputs.length : ""} Token${validInputs.length !== 1 ? "s" : ""}`}
-          </button>
-
-          {doneResults.length > 0 && (
-            <button
-              onClick={() => {
-                // Export as CSV
-                const headers = ["Token", "Chain", "Symbol", "Overall", "Demand", "Market Presence", "Liquidity", "Bridge Risk", "Dump Risk", "Strategy"];
-                const rows = ranked.map((r) => [
-                  r.token, r.chain,
-                  r.meta?.symbol ?? "",
-                  r.scores?.overall ?? "",
-                  r.scores?.demand ?? "",
-                  r.scores?.marketPresence ?? "",
-                  r.scores?.liquidity ?? "",
-                  r.scores?.bridgeRisk ?? "",
-                  r.scores?.dumpRisk ?? "",
-                  r.strategy?.strategy ?? "",
-                ]);
-                const csv = [headers, ...rows].map((r) => r.join(",")).join("\n");
-                const blob = new Blob([csv], { type: "text/csv" });
-                const url  = URL.createObjectURL(blob);
-                const a    = document.createElement("a");
-                a.href     = url;
-                a.download = "sunrise-comparison.csv";
-                a.click();
-              }}
-              style={{
-                marginLeft: "auto",
-                padding: "10px 20px", fontSize: 13, borderRadius: 10,
-                border: "1px solid #27272a",
-                background: "rgba(255,255,255,0.03)",
-                color: "#71717a", cursor: "pointer",
-              }}
-            >
-              ↓ Export CSV
-            </button>
-          )}
-        </div>
-
-        {/* ── Results ─────────────────────────────────────────────────────── */}
-        {hasRun && results.length > 0 && (
-          <div>
-            {/* Loading cards */}
-            {results.some((r) => r.status === "loading") && (
-              <div style={{
-                display: "grid",
-                gridTemplateColumns: `repeat(${results.length}, 1fr)`,
-                gap: 12, marginBottom: 24,
+        <div style={{ display: "grid", gridTemplateColumns: `repeat(${tokens.length}, 1fr)`, gap: 10, marginBottom: 16 }}>
+          {tokens.map((t, i) => {
+            const color = TOKEN_COLORS[i];
+            return (
+              <div key={t.id} className="slot-card" style={{
+                border: `1px solid ${color}20`, borderRadius: 8, padding: 16,
+                background: `${color}05`,
               }}>
-                {results.map((r) => r.status === "loading" && (
-                  <div key={r.id} style={{
-                    padding: 28, background: "rgba(20,20,30,0.8)",
-                    border: "1px solid #27272a", borderRadius: 14,
-                    textAlign: "center",
-                  }}>
-                    <div style={{ fontSize: 32, marginBottom: 12, animation: "spin 1.5s linear infinite" }}>⏳</div>
-                    <p style={{ fontSize: 12, color: "#52525b", fontFamily: "monospace", wordBreak: "break-all" }}>
-                      {r.token.slice(0, 10)}…{r.token.slice(-6)}
-                    </p>
-                    <p style={{ fontSize: 12, color: "#71717a", marginTop: 6 }}>Fetching data…</p>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: color }} />
+                    <span style={{ fontSize: 10, color, fontWeight: 600, letterSpacing: "0.1em" }}>TOKEN {i+1}</span>
+                  </div>
+                  {tokens.length > 2 && (
+                    <button onClick={() => removeSlot(t.id)} style={{ fontSize: 14, color: "#334155", background: "transparent", border: "none", cursor: "pointer", lineHeight: 1 }}>×</button>
+                  )}
+                </div>
+                <input type="text" value={t.token} onChange={e => updateSlot(t.id,"token",e.target.value)} placeholder="0x..." disabled={running}
+                  style={{ width: "100%", padding: "9px 10px", fontSize: 11, fontFamily: "'IBM Plex Mono'", border: `1px solid ${t.token.length>0&&(!t.token.startsWith("0x")||t.token.length!==42)?"#f8717160":"rgba(255,255,255,0.08)"}`, borderRadius: 5, background: "#030307", color: "#e2e8f0", marginBottom: 8 }} />
+                <select value={t.chain} onChange={e => updateSlot(t.id,"chain",e.target.value)} disabled={running}
+                  style={{ width: "100%", padding: "8px 10px", fontSize: 11, fontFamily: "'IBM Plex Mono'", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 5, background: "#030307", color: "#94a3b8" }}>
+                  {CHAINS.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+                </select>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ display: "flex", gap: 10, marginBottom: 48, alignItems: "center" }}>
+          {tokens.length < 4 && (
+            <button onClick={addSlot} disabled={running} style={{
+              padding: "9px 18px", fontSize: 11, borderRadius: 5, cursor: "pointer",
+              border: "1px dashed rgba(255,255,255,0.1)", background: "transparent",
+              color: "#334155", fontFamily: "'IBM Plex Mono'", letterSpacing: "0.06em",
+            }}>+ ADD TOKEN</button>
+          )}
+          <button onClick={runComparison} disabled={running || validInputs.length < 1} style={{
+            padding: "9px 28px", fontSize: 12, fontWeight: 700, borderRadius: 5, border: "none",
+            cursor: running || validInputs.length < 1 ? "not-allowed" : "pointer",
+            background: running || validInputs.length < 1 ? "rgba(255,255,255,0.04)" : "linear-gradient(90deg,#0ea5e9,#38bdf8)",
+            color: running || validInputs.length < 1 ? "#334155" : "#030307",
+            letterSpacing: "0.08em", fontFamily: "'IBM Plex Mono'",
+            boxShadow: running || validInputs.length < 1 ? "none" : "0 0 20px rgba(56,189,248,0.3)",
+          }}>
+            {running ? "ANALYZING…" : `RUN BATTLE`}
+          </button>
+          {doneResults.length > 0 && (
+            <button onClick={() => {
+              const h = ["Token","Chain","Symbol","Overall","Demand","Presence","Liquidity","BridgeRisk","DumpRisk","Strategy"];
+              const rows = ranked.map(r=>[r.token,r.chain,r.meta?.symbol??"",r.scores?.overall??"",r.scores?.demand??"",r.scores?.marketPresence??"",r.scores?.liquidity??"",r.scores?.bridgeRisk??"",r.scores?.dumpRisk??"",r.strategy?.strategy??""]);
+              const csv = [h,...rows].map(r=>r.join(",")).join("\n");
+              const a = Object.assign(document.createElement("a"),{href:URL.createObjectURL(new Blob([csv],{type:"text/csv"})),download:"sunrise-compare.csv"});
+              a.click();
+            }} style={{ marginLeft:"auto", padding:"9px 18px", fontSize:11, borderRadius:5, cursor:"pointer", border:"1px solid rgba(255,255,255,0.06)", background:"transparent", color:"#334155", fontFamily:"'IBM Plex Mono'", letterSpacing:"0.06em" }}>
+              ↓ CSV
+            </button>
+          )}
+        </div>
+
+        {!hasRun && (
+          <div style={{ textAlign:"center", padding:"60px 24px", border:"1px dashed rgba(255,255,255,0.06)", borderRadius:10 }}>
+            <div style={{ fontFamily:"'Syne'", fontSize:40, color:"#1e293b", marginBottom:12 }}>⚔</div>
+            <p style={{ fontSize:11, color:"#334155", letterSpacing:"0.06em" }}>ENTER TOKEN ADDRESSES AND TAP RUN BATTLE</p>
+          </div>
+        )}
+
+        {hasRun && (
+          <div>
+            {results.some(r=>r.status==="loading") && (
+              <div style={{ display:"flex", gap:10, marginBottom:24 }}>
+                {results.map((r,i) => r.status==="loading" && (
+                  <div key={r.id} style={{ flex:1, padding:24, border:"1px solid rgba(255,255,255,0.05)", borderRadius:8, textAlign:"center", background:"rgba(10,10,20,0.6)" }}>
+                    <div style={{ fontSize:20, marginBottom:8, display:"inline-block", animation:"spin 1.2s linear infinite" }}>◌</div>
+                    <p style={{ fontSize:10, color:"#334155", letterSpacing:"0.06em" }}>{r.token.slice(0,10)}…</p>
                   </div>
                 ))}
               </div>
             )}
 
-            {/* Leaderboard */}
             {ranked.length > 0 && (
-              <div style={{ marginBottom: 32 }}>
-                <h2 style={{ fontSize: 18, fontWeight: 700, margin: "0 0 16px", color: "#fff" }}>
-                  🏆 Leaderboard — Ranked by Migration Readiness
-                </h2>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {ranked.map((r, i) => (
-                    <div key={r.id} style={{
-                      display: "flex", alignItems: "center", gap: 16,
-                      padding: "14px 20px",
-                      background: i === 0
-                        ? "linear-gradient(90deg, rgba(139,92,246,0.12), rgba(34,211,238,0.06))"
-                        : "rgba(20,20,30,0.6)",
-                      border: i === 0 ? "1px solid rgba(139,92,246,0.25)" : "1px solid #27272a",
-                      borderRadius: 12, position: "relative", overflow: "hidden",
-                    }}>
-                      {/* Rank fill bar */}
-                      <div style={{
-                        position: "absolute", top: 0, left: 0, bottom: 0,
-                        width: `${r.scores!.overall}%`,
-                        background: scoreColor(r.scores!.overall),
-                        opacity: 0.04,
-                        transition: "width 0.8s ease",
-                      }} />
+              <div style={{ display:"grid", gridTemplateColumns:doneResults.length>=3?"1fr 1fr":"1fr", gap:24, marginBottom:32 }}>
 
-                      <span style={{ fontSize: 22 }}>{MEDALS[i]}</span>
-
-                      {r.meta?.image && (
-                        <img src={r.meta.image} alt={r.meta.symbol}
-                          style={{ width: 36, height: 36, borderRadius: 8, background: "#18181b" }} />
-                      )}
-
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 700, fontSize: 15, color: "#fff" }}>
-                          {r.meta?.name ?? "—"}{" "}
-                          <span style={{ color: "#71717a", fontWeight: 400, fontSize: 13 }}>
-                            ({r.meta?.symbol ?? r.token.slice(0, 8)})
-                          </span>
-                        </div>
-                        <div style={{ fontSize: 12, color: "#52525b", marginTop: 2 }}>
-                          {CHAINS.find((c) => c.id === r.chain)?.label} ·{" "}
-                          {r.meta ? fmtMoney(r.meta.marketCap) + " MCap" : r.token.slice(0, 10) + "…"}
-                        </div>
-                      </div>
-
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{
-                          fontSize: 28, fontWeight: 700,
-                          color: scoreColor(r.scores!.overall),
-                          lineHeight: 1,
+                <div>
+                  <div style={{ fontSize:10, color:"#334155", letterSpacing:"0.12em", marginBottom:12 }}>
+                    LEADERBOARD — RANKED BY OVERALL SCORE
+                  </div>
+                  <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                    {ranked.map((r,i) => {
+                      const color = TOKEN_COLORS[doneResults.indexOf(r)];
+                      const sc    = r.scores!.overall;
+                      return (
+                        <div key={r.id} style={{
+                          display:"flex", alignItems:"center", gap:14, padding:"14px 18px",
+                          border:`1px solid ${color}${i===0?"40":"18"}`,
+                          borderRadius:8, background:`${color}${i===0?"08":"04"}`,
+                          animation:`fadeUp 0.25s ease both`, animationDelay:`${i*60}ms`,
                         }}>
-                          {r.scores!.overall}
+                          <div style={{ fontFamily:"'Syne'", fontSize:11, fontWeight:800, color:i===0?color:"#334155", width:20 }}>
+                            #{i+1}
+                          </div>
+                          {r.meta?.image && <img src={r.meta.image} alt="" style={{ width:28, height:28, borderRadius:"50%", background:"#0f0f1a" }} />}
+                          <div style={{ flex:1 }}>
+                            <div style={{ fontFamily:"'Syne'", fontSize:13, fontWeight:700, color:"#e2e8f0" }}>
+                              {r.meta?.name ?? "—"}
+                            </div>
+                            <div style={{ fontSize:10, color:"#334155", marginTop:2 }}>
+                              {r.chain.toUpperCase()} · {r.meta && fmtMoney(r.meta.marketCap)}
+                            </div>
+                          </div>
+                          <div style={{ textAlign:"right" as const }}>
+                            <div style={{ fontFamily:"'Syne'", fontSize:22, fontWeight:800, color:SCORE_COLOR(sc), lineHeight:1 }}>{sc}</div>
+                            <div style={{ fontSize:9, letterSpacing:"0.08em", color:SCORE_COLOR(sc) }}>{SCORE_LABEL(sc)}</div>
+                          </div>
                         </div>
-                        <div style={{ fontSize: 11, color: "#52525b", marginTop: 2 }}>/ 100</div>
-                      </div>
+                      );
+                    })}
+                  </div>
+                </div>
 
-                      <div style={{
-                        fontSize: 12, padding: "4px 12px", borderRadius: 20,
-                        background: scoreBg(r.scores!.overall),
-                        color: scoreColor(r.scores!.overall),
-                        fontWeight: 600, whiteSpace: "nowrap",
-                      }}>
-                        {r.strategy?.strategy}
+                {doneResults.length >= 2 && (
+                  <div>
+                    <div style={{ fontSize:10, color:"#334155", letterSpacing:"0.12em", marginBottom:12 }}>RADAR — SCORE ACROSS DIMENSIONS</div>
+                    <div style={{ background:"rgba(10,10,20,0.8)", border:"1px solid rgba(255,255,255,0.05)", borderRadius:8, padding:"16px 8px" }}>
+                      <ResponsiveContainer width="100%" height={240}>
+                        <RadarChart data={radarData} margin={{ top:10, right:30, bottom:10, left:30 }}>
+                          <PolarGrid stroke="rgba(255,255,255,0.06)" />
+                          <PolarAngleAxis dataKey="metric" tick={{ fill:"#334155", fontSize:10, fontFamily:"IBM Plex Mono" }} />
+                          {doneResults.map((r,i) => (
+                            <Radar key={r.id} name={r.meta?.symbol??`T${i+1}`}
+                              dataKey={r.meta?.symbol??`T${i+1}`}
+                              fill={TOKEN_COLORS[i]} fillOpacity={0.1}
+                              stroke={TOKEN_COLORS[i]} strokeWidth={2} />
+                          ))}
+                          <Tooltip
+                            contentStyle={{ background:"#0d0d18", border:"1px solid rgba(255,255,255,0.08)", borderRadius:6, fontFamily:"IBM Plex Mono", fontSize:11, color:"#e2e8f0" }}
+                            labelStyle={{ color:"#64748b", fontSize:10 }}
+                          />
+                        </RadarChart>
+                      </ResponsiveContainer>
+                      <div style={{ display:"flex", justifyContent:"center", gap:16, marginTop:4 }}>
+                        {doneResults.map((r,i) => (
+                          <div key={r.id} style={{ display:"flex", alignItems:"center", gap:5 }}>
+                            <div style={{ width:8, height:8, borderRadius:"50%", background:TOKEN_COLORS[i] }} />
+                            <span style={{ fontSize:10, color:"#64748b" }}>{r.meta?.symbol??`T${i+1}`}</span>
+                          </div>
+                        ))}
                       </div>
                     </div>
-                  ))}
-                </div>
+                  </div>
+                )}
               </div>
             )}
 
-            {/* ── Score Comparison Matrix ──────────────────────────────────── */}
             {doneResults.length > 0 && (
-              <div style={{
-                background: "rgba(20,20,30,0.8)", border: "1px solid #27272a",
-                borderRadius: 16, overflow: "hidden", marginBottom: 32,
-              }}>
-                <div style={{ padding: "20px 24px 16px", borderBottom: "1px solid #27272a" }}>
-                  <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: "#fff" }}>
-                    Score Breakdown Matrix
-                  </h2>
+              <div>
+                <div style={{ fontSize:10, color:"#334155", letterSpacing:"0.12em", marginBottom:12 }}>
+                  SCORE BREAKDOWN MATRIX
                 </div>
-
-                <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 500 }}>
-                    <thead>
-                      <tr style={{ borderBottom: "1px solid #27272a" }}>
-                        <th style={{ padding: "12px 24px", textAlign: "left", color: "#52525b", fontWeight: 500, fontSize: 12 }}>
-                          Category
-                        </th>
-                        {doneResults.map((r) => (
-                          <th key={r.id} style={{ padding: "12px 16px", textAlign: "center", color: "#e5e5e5", fontWeight: 600, fontSize: 13 }}>
-                            {r.meta?.symbol ?? r.token.slice(0, 8)}
-                            <div style={{ fontSize: 10, color: "#52525b", fontWeight: 400, marginTop: 2 }}>
-                              {CHAINS.find((c) => c.id === r.chain)?.label}
-                            </div>
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {CATEGORIES.map(({ key, label, info }) => (
-                        <tr key={key} style={{ borderBottom: "1px solid #18181b" }}>
-                          <td style={{ padding: "14px 24px", fontSize: 13, color: "#a1a1aa", fontWeight: 500 }}>
-                            {label}
-                            {info && <span style={{ marginLeft: 6, fontSize: 10, color: "#52525b" }}>(lower=better)</span>}
-                          </td>
-                          {doneResults.map((r) => {
-                            const rawScore = r.scores?.[key] ?? 0;
-                            const displayScore = rawScore;
-                            const color = key === "dumpRisk" ? scoreColor(displayScore, true) : scoreColor(displayScore);
-                            const bg    = key === "dumpRisk" ? scoreBg(displayScore, true) : scoreBg(displayScore);
-
-                            return (
-                              <td key={r.id} style={{ padding: "14px 16px", textAlign: "center" }}>
-                                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-                                  <span style={{
-                                    fontSize: 20, fontWeight: 700, color,
-                                  }}>
-                                    {displayScore}
-                                  </span>
-                                  {/* Mini bar */}
-                                  <div style={{ width: 56, height: 4, borderRadius: 2, background: "#1f1f27", overflow: "hidden" }}>
-                                    <div style={{
-                                      height: "100%",
-                                      width: `${key === "dumpRisk" ? 100 - displayScore : displayScore}%`,
-                                      background: color, borderRadius: 2,
-                                      transition: "width 0.6s ease",
-                                    }} />
+                <div style={{ border:"1px solid rgba(255,255,255,0.05)", borderRadius:8, overflow:"hidden", marginBottom:32 }}>
+                  <div style={{ overflowX:"auto" }}>
+                    <table style={{ width:"100%", borderCollapse:"collapse", minWidth:500 }}>
+                      <thead>
+                        <tr style={{ borderBottom:"1px solid rgba(255,255,255,0.05)" }}>
+                          <th style={{ padding:"12px 20px", textAlign:"left" as const, fontSize:9, color:"#1e293b", letterSpacing:"0.1em" }}>DIMENSION</th>
+                          {doneResults.map((r,i) => (
+                            <th key={r.id} style={{ padding:"12px 16px", textAlign:"center" as const, fontSize:11, color:TOKEN_COLORS[i], fontWeight:700, letterSpacing:"0.06em" }}>
+                              {r.meta?.symbol??r.token.slice(0,8)}
+                              <div style={{ fontSize:9, color:"#334155", fontWeight:400, marginTop:2 }}>{r.chain.toUpperCase()}</div>
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {CATEGORIES.map(({ key, label, lower }) => (
+                          <tr key={key} className="score-cell" style={{ borderBottom:"1px solid rgba(255,255,255,0.03)" }}>
+                            <td style={{ padding:"14px 20px", fontSize:10, color:"#475569", letterSpacing:"0.06em" }}>
+                              {label}{lower && <span style={{ marginLeft:6, fontSize:8, color:"#1e293b" }}>(LOWER=BETTER)</span>}
+                            </td>
+                            {doneResults.map((r,i) => {
+                              const raw = r.scores?.[key] ?? 0;
+                              const eff = lower ? 100 - raw : raw;
+                              const col = SCORE_COLOR(eff);
+                              return (
+                                <td key={r.id} style={{ padding:"14px 16px", textAlign:"center" as const }}>
+                                  <div style={{ fontFamily:"'Syne'", fontSize:20, fontWeight:800, color:col, lineHeight:1, marginBottom:5 }}>{raw}</div>
+                                  <div style={{ width:48, height:3, background:"rgba(255,255,255,0.04)", borderRadius:2, margin:"0 auto", overflow:"hidden" }}>
+                                    <div style={{ width:`${eff}%`, height:"100%", background:col, borderRadius:2, transition:"width 0.7s ease" }} />
                                   </div>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                        <tr style={{ borderTop:"1px solid rgba(255,255,255,0.06)", background:"rgba(56,189,248,0.04)" }}>
+                          <td style={{ padding:"16px 20px", fontSize:10, color:"#38bdf8", letterSpacing:"0.1em", fontWeight:700 }}>OVERALL SCORE</td>
+                          {doneResults.map((r,i) => {
+                            const sc      = r.scores?.overall ?? 0;
+                            const isWinner = ranked[0]?.id === r.id;
+                            return (
+                              <td key={r.id} style={{ padding:"16px", textAlign:"center" as const }}>
+                                <div style={{ display:"flex", flexDirection:"column" as const, alignItems:"center", gap:6 }}>
+                                  <ScoreRing score={sc} color={TOKEN_COLORS[i]} size={56} />
+                                  {isWinner && <span style={{ fontSize:8, color:"#38bdf8", letterSpacing:"0.1em", fontWeight:700 }}>WINNER</span>}
                                 </div>
                               </td>
                             );
                           })}
                         </tr>
-                      ))}
-                      {/* Overall row */}
-                      <tr style={{ borderTop: "1px solid #27272a", background: "rgba(139,92,246,0.04)" }}>
-                        <td style={{ padding: "16px 24px", fontSize: 14, color: "#b980ff", fontWeight: 700 }}>
-                          Overall Score
-                        </td>
-                        {doneResults.map((r) => {
-                          const score = r.scores?.overall ?? 0;
-                          const isWinner = ranked[0]?.id === r.id;
-                          return (
-                            <td key={r.id} style={{ padding: "16px", textAlign: "center" }}>
-                              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-                                <ScoreRing score={score} size={68} />
-                                {isWinner && (
-                                  <span style={{
-                                    fontSize: 10, padding: "2px 8px", borderRadius: 10,
-                                    background: "rgba(139,92,246,0.2)", color: "#b980ff",
-                                    fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px",
-                                  }}>
-                                    Best Pick
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    </tbody>
-                  </table>
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
-            )}
 
-            {/* ── Strategy Cards ───────────────────────────────────────────── */}
-            {doneResults.length > 0 && (
-              <div>
-                <h2 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 16px", color: "#fff" }}>
-                  Migration Strategy per Token
-                </h2>
-                <div style={{
-                  display: "grid",
-                  gridTemplateColumns: `repeat(auto-fill, minmax(280px, 1fr))`,
-                  gap: 14,
-                }}>
-                  {doneResults.map((r) => (
+                <div style={{ display:"grid", gridTemplateColumns:`repeat(auto-fill,minmax(260px,1fr))`, gap:10 }}>
+                  {doneResults.map((r,i) => (
                     <div key={r.id} style={{
-                      padding: 20,
-                      background: "linear-gradient(135deg, rgba(34,197,94,0.08), rgba(22,163,74,0.04))",
-                      border: "1px solid rgba(34,197,94,0.2)",
-                      borderRadius: 14,
+                      padding:18, border:`1px solid ${TOKEN_COLORS[i]}25`, borderRadius:8, background:`${TOKEN_COLORS[i]}05`,
                     }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                        {r.meta?.image && (
-                          <img src={r.meta.image} alt="" style={{ width: 28, height: 28, borderRadius: 6 }} />
-                        )}
+                      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+                        {r.meta?.image && <img src={r.meta.image} alt="" style={{ width:24, height:24, borderRadius:"50%", background:"#0f0f1a" }} />}
                         <div>
-                          <div style={{ fontWeight: 700, fontSize: 14, color: "#fff" }}>
-                            {r.meta?.symbol ?? r.token.slice(0, 8)}
-                          </div>
-                          <div style={{ fontSize: 11, color: "#52525b" }}>
-                            {CHAINS.find((c) => c.id === r.chain)?.label}
-                          </div>
+                          <div style={{ fontFamily:"'Syne'", fontSize:12, fontWeight:700, color:TOKEN_COLORS[i] }}>{r.meta?.symbol??r.token.slice(0,8)}</div>
+                          <div style={{ fontSize:9, color:"#334155", letterSpacing:"0.06em" }}>{r.chain.toUpperCase()}</div>
                         </div>
                       </div>
-                      <div style={{
-                        fontSize: 13, fontWeight: 600, color: "#22c55e", marginBottom: 8,
-                      }}>
-                        {r.strategy?.strategy}
-                      </div>
-                      <div style={{ fontSize: 12, color: "#71717a", lineHeight: 1.6 }}>
-                        {r.strategy?.rationale}
-                      </div>
+                      <div style={{ fontFamily:"'Syne'", fontSize:12, fontWeight:700, color:"#4ade80", marginBottom:6 }}>{r.strategy?.strategy}</div>
+                      <div style={{ fontSize:10, color:"#475569", lineHeight:1.7 }}>{r.strategy?.rationale}</div>
                     </div>
                   ))}
                 </div>
               </div>
             )}
 
-            {/* Error states */}
-            {results.filter((r) => r.status === "error").map((r) => (
-              <div key={r.id} style={{
-                padding: "14px 20px", marginTop: 14,
-                background: "rgba(239,68,68,0.07)",
-                border: "1px solid rgba(239,68,68,0.2)",
-                borderRadius: 12, fontSize: 13, color: "#f87171",
-              }}>
-                ⚠ Failed for {r.token.slice(0, 12)}…: {r.error}
+            {results.filter(r=>r.status==="error").map(r => (
+              <div key={r.id} style={{ marginTop:10, padding:"12px 18px", border:"1px solid #f8717130", borderRadius:6, fontSize:10, color:"#f87171", fontFamily:"'IBM Plex Mono'", letterSpacing:"0.04em" }}>
+                ERR {r.token.slice(0,10)}…: {r.error}
               </div>
             ))}
           </div>
         )}
-
-        {/* Empty state */}
-        {!hasRun && (
-          <div style={{
-            textAlign: "center", padding: "60px 20px",
-            border: "1px dashed #27272a", borderRadius: 16,
-          }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>⚔️</div>
-            <p style={{ fontSize: 15, color: "#52525b" }}>
-              Enter at least 2 token addresses and tap <strong style={{ color: "#8b5cf6" }}>Compare</strong> to see which is most ready for Solana.
-            </p>
-          </div>
-        )}
       </div>
-
-      <style>{`
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-      `}</style>
     </div>
   );
 }
