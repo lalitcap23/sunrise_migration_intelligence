@@ -3,7 +3,28 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 
-// ─── Compatibility types (mirrors lib/compatibility.ts) ────────────────────────
+// ─── Exchange listing types ────────────────────────────────────────────────
+type ExchangeListing = {
+  name: string;
+  identifier: string;
+  type: "dex" | "cex";
+  pair: string;
+  volumeUsd: number;
+  trustScore: string | null;
+  url: string | null;
+};
+
+type ExchangeListingsData = {
+  dexListings: ExchangeListing[];
+  cexListings: ExchangeListing[];
+  totalDexCount: number;
+  totalCexCount: number;
+  totalVolumeUsd: number;
+  topVenueName: string | null;
+  dataNote: string;
+};
+
+// ─── Compatibility types (mirrors lib/compatibility.ts) ──────────────────────────
 type FlagSeverity = "critical" | "warning" | "info";
 interface CompatibilityFlag {
   id:           string;
@@ -341,9 +362,219 @@ interface AnalysisResult {
   chart: {
     volumeHistory: { date: string; volumeUsd: number }[];
   };
+  exchanges: ExchangeListingsData;
 }
 
 
+
+
+// ─── Exchange Listings Panel ───────────────────────────────────────────────────────
+
+const TRUST_DOT: Record<string, string> = {
+  green:  "#22c55e",
+  yellow: "#eab308",
+  red:    "#ef4444",
+};
+
+function fmtVol(n: number): string {
+  if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(2)}B`;
+  if (n >= 1_000_000)     return `$${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000)         return `$${(n / 1_000).toFixed(1)}K`;
+  return n > 0 ? `$${n.toFixed(0)}` : "—";
+}
+
+function ExchangeListingsPanel({ data }: { data: ExchangeListingsData }) {
+  const [tab, setTab] = useState<"cex" | "dex">("cex");
+
+  const activeListing = tab === "cex" ? data.cexListings : data.dexListings;
+  const maxVol = Math.max(...activeListing.map((e) => e.volumeUsd), 1);
+
+  const totalCex = data.totalCexCount;
+  const totalDex = data.totalDexCount;
+
+  return (
+    <div style={{
+      background: "rgba(24,24,27,0.8)",
+      border: "1px solid #27272a",
+      borderRadius: 16,
+      overflow: "hidden",
+      marginBottom: 24,
+    }}>
+      {/* Header */}
+      <div style={{ padding: "20px 20px 0" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 20 }}>🏛️</span>
+            <span style={{ fontWeight: 700, fontSize: 15, color: "#e5e5e5" }}>Exchange Listings</span>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {/* Summary badges */}
+            {totalCex > 0 && (
+              <span style={{
+                fontSize: 11, padding: "3px 10px", borderRadius: 20, fontWeight: 700,
+                background: "rgba(59,130,246,0.12)", color: "#60a5fa",
+                border: "1px solid rgba(59,130,246,0.25)",
+              }}>
+                {totalCex} CEX
+              </span>
+            )}
+            {totalDex > 0 && (
+              <span style={{
+                fontSize: 11, padding: "3px 10px", borderRadius: 20, fontWeight: 700,
+                background: "rgba(139,92,246,0.12)", color: "#a78bfa",
+                border: "1px solid rgba(139,92,246,0.25)",
+              }}>
+                {totalDex} DEX
+              </span>
+            )}
+          </div>
+        </div>
+        <p style={{ fontSize: 12, color: "#52525b", margin: "4px 0 16px" }}>
+          Total 24h volume across all venues: <span style={{ color: "#a1a1aa", fontWeight: 600 }}>{fmtVol(data.totalVolumeUsd)}</span>
+          {data.topVenueName && <> · Top venue: <span style={{ color: "#a1a1aa", fontWeight: 600 }}>{data.topVenueName}</span></>}
+        </p>
+
+        {/* Tab bar */}
+        <div style={{ display: "flex", gap: 2, background: "#0f0f13", borderRadius: 10, padding: 4, width: "fit-content", marginBottom: 0 }}>
+          {(["cex", "dex"] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              style={{
+                padding: "6px 16px", fontSize: 12, fontWeight: 700,
+                borderRadius: 8, border: "none", cursor: "pointer",
+                textTransform: "uppercase", letterSpacing: "0.5px",
+                transition: "all 0.15s",
+                background: tab === t
+                  ? t === "cex" ? "rgba(59,130,246,0.2)" : "rgba(139,92,246,0.2)"
+                  : "transparent",
+                color: tab === t
+                  ? t === "cex" ? "#60a5fa" : "#a78bfa"
+                  : "#52525b",
+              }}
+            >
+              {t === "cex" ? `CEX (${totalCex})` : `DEX (${totalDex})`}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Listing rows */}
+      <div style={{ padding: "12px 0 0" }}>
+        {activeListing.length === 0 ? (
+          <p style={{ padding: "20px 20px", fontSize: 13, color: "#52525b", textAlign: "center" }}>
+            No {tab.toUpperCase()} listings found for this token.
+          </p>
+        ) : (
+          activeListing.slice(0, 12).map((entry, i) => {
+            const barPct = maxVol > 0 ? (entry.volumeUsd / maxVol) * 100 : 0;
+            const dotColor = entry.trustScore ? (TRUST_DOT[entry.trustScore] ?? "#52525b") : null;
+
+            return (
+              <div
+                key={entry.identifier + i}
+                style={{
+                  display: "flex", alignItems: "center", gap: 12,
+                  padding: "10px 20px",
+                  borderTop: i === 0 ? "1px solid rgba(255,255,255,0.04)" : "1px solid rgba(255,255,255,0.025)",
+                  transition: "background 0.15s",
+                  position: "relative",
+                  overflow: "hidden",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.02)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+              >
+                {/* Volume bar (background) */}
+                <div style={{
+                  position: "absolute", left: 0, top: 0, bottom: 0,
+                  width: `${barPct}%`,
+                  background: tab === "cex"
+                    ? "rgba(59,130,246,0.05)"
+                    : "rgba(139,92,246,0.05)",
+                  pointerEvents: "none",
+                  transition: "width 0.4s ease",
+                }} />
+
+                {/* Rank */}
+                <span style={{
+                  fontSize: 11, fontWeight: 700, color: "#3f3f46",
+                  minWidth: 18, textAlign: "right", flexShrink: 0, zIndex: 1,
+                }}>
+                  {i + 1}
+                </span>
+
+                {/* Trust score dot (CEX only) */}
+                {tab === "cex" && dotColor && (
+                  <span style={{
+                    width: 7, height: 7, borderRadius: "50%",
+                    background: dotColor, flexShrink: 0, zIndex: 1,
+                  }} />
+                )}
+                {tab === "cex" && !dotColor && (
+                  <span style={{ width: 7, flexShrink: 0, zIndex: 1 }} />
+                )}
+
+                {/* DEX icon placeholder */}
+                {tab === "dex" && (
+                  <span style={{ fontSize: 13, flexShrink: 0, zIndex: 1 }}>⬡</span>
+                )}
+
+                {/* Name + pair */}
+                <div style={{ flex: 1, minWidth: 0, zIndex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, color: "#e5e5e5", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {entry.name}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#52525b", marginTop: 1 }}>{entry.pair}</div>
+                </div>
+
+                {/* Volume */}
+                <div style={{ textAlign: "right", zIndex: 1 }}>
+                  <div style={{
+                    fontSize: 13, fontWeight: 600,
+                    color: tab === "cex" ? "#60a5fa" : "#a78bfa",
+                  }}>
+                    {fmtVol(entry.volumeUsd)}
+                  </div>
+                  <div style={{ fontSize: 10, color: "#3f3f46" }}>24h vol</div>
+                </div>
+
+                {/* Trade link */}
+                {entry.url && (
+                  <a
+                    href={entry.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      fontSize: 10, padding: "3px 9px", borderRadius: 7, flexShrink: 0,
+                      background: tab === "cex" ? "rgba(59,130,246,0.1)" : "rgba(139,92,246,0.1)",
+                      color: tab === "cex" ? "#60a5fa" : "#a78bfa",
+                      border: `1px solid ${tab === "cex" ? "rgba(59,130,246,0.2)" : "rgba(139,92,246,0.2)"}`,
+                      textDecoration: "none", fontWeight: 600, zIndex: 1,
+                    }}
+                  >
+                    Trade ↗
+                  </a>
+                )}
+              </div>
+            );
+          })
+        )}
+
+        {/* show more hint */}
+        {activeListing.length > 12 && (
+          <p style={{ fontSize: 11, color: "#3f3f46", padding: "10px 20px", textAlign: "center" }}>
+            +{activeListing.length - 12} more {tab.toUpperCase()} listings · showing top 12 by volume
+          </p>
+        )}
+      </div>
+
+      {/* Footer note */}
+      <div style={{ padding: "12px 20px", borderTop: "1px solid rgba(255,255,255,0.04)" }}>
+        <p style={{ margin: 0, fontSize: 11, color: "#3f3f46" }}>{data.dataNote}</p>
+      </div>
+    </div>
+  );
+}
 
 function ScoreBar({ score, label }: { score: number; label: string }) {
   const color = score >= 70 ? "#22c55e" : score >= 40 ? "#eab308" : "#ef4444";
@@ -885,10 +1116,14 @@ export default function AnalyzePage() {
               </p>
             </div>
 
-
             {/* Contract Safety Scan — loads independently after main analysis */}
             {analyzed && (
               <CompatibilityPanel key={analyzed.token + analyzed.chain} token={analyzed.token} chain={analyzed.chain} />
+            )}
+
+            {/* Exchange Listings — DEX & CEX */}
+            {result.exchanges && (
+              <ExchangeListingsPanel data={result.exchanges} />
             )}
 
             {/* Module Breakdowns */}

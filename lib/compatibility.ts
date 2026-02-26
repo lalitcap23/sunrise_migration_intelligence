@@ -1,9 +1,8 @@
 /**
- * TOKEN COMPATIBILITY CHECKER
  *
  * Scans ERC-20 contracts for bridge incompatibilities BEFORE migration.
  * Uses:
- *  - Free Etherscan / BscScan / Polygonscan sourcecode API (API key optional)
+ *  - Free Etherscan / BscScan / Polygonscan sourcecode API 
  *  - Public JSON-RPC `eth_getStorageAt` for EIP-1967 proxy slot detection
  *
  *  1. Fee-on-transfer  — tax tokens (common on BSC), bridges receive less than sent
@@ -55,7 +54,7 @@ export interface CompatibilityResult {
     implementationAddress: string | null;
     flags: CompatibilityFlag[];
     overallCompatibility: "compatible" | "caution" | "incompatible";
-    compatibilityScore: number;   // 0-100, higher = safer to bridge
+    compatibilityScore: number;   
     summary: string;
     bridgeRecommendation: string;
 }
@@ -133,7 +132,6 @@ export async function checkTokenCompatibility(
     let isProxyApi = false;
     let implApi: string | null = null;
 
-    // ── Fetch contract source from block explorer ─────────────────────────────
     try {
         const params = apiKey ? `&apikey=${apiKey}` : "";
         const url = `${apiBase}?module=contract&action=getsourcecode&address=${address}${params}`;

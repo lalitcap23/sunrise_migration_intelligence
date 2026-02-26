@@ -13,6 +13,7 @@ import { geckoClient, PLATFORM_MAP } from "@/lib/coingecko";
 import { fetchHolderData } from "@/lib/holders";
 import { fetchLiquidityData } from "@/lib/liquidity";
 import { fetchBridgeData } from "@/lib/bridges";
+import { parseExchangeListings } from "@/lib/exchanges";
 
 import {
   calcDemandScore,
@@ -82,7 +83,14 @@ export async function POST(req: NextRequest) {
     const totalSupply = md.total_supply ?? circulatingSupply;
 
     const watchlistUsers = coinData.watchlist_portfolio_users ?? 0;
-    const tickerCount = (coinData.tickers ?? []).length;
+    const rawTickers = (coinData.tickers ?? []) as Record<string, unknown>[];
+    const tickerCount = rawTickers.length;
+
+    // ── Parse exchange listings (DEX / CEX) ──────────────────────────────────
+    const exchangeListings = parseExchangeListings(
+      rawTickers,
+      coinData.symbol?.toUpperCase() ?? "???",
+    );
 
     // ── Step 4: Run scoring engine
 
@@ -242,6 +250,17 @@ export async function POST(req: NextRequest) {
         },
         strategy: strategyResult,
         overall: overallScore,
+      },
+
+      // Exchange listing data (DEX + CEX)
+      exchanges: {
+        dexListings: exchangeListings.dexListings,
+        cexListings: exchangeListings.cexListings,
+        totalDexCount: exchangeListings.totalDexCount,
+        totalCexCount: exchangeListings.totalCexCount,
+        totalVolumeUsd: exchangeListings.totalVolumeUsd,
+        topVenueName: exchangeListings.topVenueName,
+        dataNote: exchangeListings.dataNote,
       },
 
       // Raw chart data (for Recharts volume bar chart)
