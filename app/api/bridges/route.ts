@@ -7,15 +7,13 @@
  * Returns enriched bridge entries for the given source chain:
  *
  *  - Wormhole  → LIVE governor notional data (capacity, daily limit, max tx)
- *                from api.wormholescan.io — no API key required
- *  - CCIP      → Static estimates (Chainlink does not have a free public API)
- *  - LayerZero → Static estimates (real quotes require project registration)
+ *                from api.wormholescan.io 
  *
  * The /api/analyze route uses the static calcBridgeScore() from lib/scoring.ts
  * for scoring purposes. This endpoint goes deeper — it returns the full live
  * Wormhole notional data for display in the UI bridge table.
  *
- * Supported chains: ethereum | bsc | polygon
+ * Supported chains: ethereum | polygon
  */
 
 import { NextRequest, NextResponse } from "next/server";

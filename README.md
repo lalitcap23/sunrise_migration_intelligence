@@ -1,36 +1,64 @@
-gThis is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ☀️ Sunrise
 
-## Getting Started
+**Token Migration Readiness Analyzer for Solana** — evaluate any ERC-20 token using real-time data, scored assessments, and strategy recommendations.
 
-First, run the development server:
+---
+
+## What It Does
+
+Enter a token address and get:
+
+- **Readiness Score** (0–100) across demand, market presence, liquidity, and bridge risk
+- **Dump Risk Score** — whale concentration, supply unlocks, bearish momentum
+- **Contract Compatibility** — 7-flag scan for bridge-breaking patterns (fee-on-transfer, rebase, proxy, etc.)
+- **Migration Strategy** — one of 4 recommended approaches based on the score profile
+- **Solana Pool Simulation** — post-migration slippage at $1K–$1M batch sizes
+- **IPFS Archival** — pin reports permanently via Pinata
+
+### Pages
+
+| Page | Description |
+|---|---|
+| `/analyze` | Core analysis dashboard |
+| `/tokens` | Top tokens by chain, one-click analyze |
+| `/compare` | Side-by-side comparison (up to 4 tokens) with radar chart + CSV export |
+| `/reports` | Saved IPFS report archive |
+
+---
+
+## Tech Stack
+
+Next.js 16 · React 19 · TypeScript 5 · Tailwind CSS v4 · Recharts · Zod · Axios  
+APIs: CoinGecko · Etherscan V2 · DeFiLlama · Wormhole Scan · Pinata (IPFS)
+
+---
+
+## Quick Start
+
+```bash
+git clone https://github.com/your-org/sunrise.git
+cd sunrise
+npm install
+```
+
+Then put  `.env`:
+
+```env
+
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# → http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Supported Chains
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Ethereum · Polygon
 
-## Learn More
+---
 
-To learn more about Next.js, take a look at the following resources:
+## License
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+MIT
