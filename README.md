@@ -1,4 +1,4 @@
-# ☀️ Sunrise
+# ☀️ sunrise_migration_intelligence
 
 **Token Migration Readiness Analyzer for Solana** — evaluate any ERC-20 token using real-time data, scored assessments, and strategy recommendations.
 
